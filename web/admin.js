@@ -65,28 +65,81 @@
     $('wdMethods').style.gridTemplateColumns = 'repeat(3,1fr)';
     $('wdAcctLabel').textContent = wdMethod === 'BANK' ? 'Bank Account / IBAN' : 'Mobile Number'; $('wdAccount').placeholder = wdMethod === 'BANK' ? 'PK36SCBL0000001123456702' : '03XXXXXXXXX';
   };
+  /* ---------- Tables with filters + CSV ---------- */
+  let lastRows = [], lastCols = [];
+  const filters = () => ({ q: ($('fSearch').value || '').trim().toLowerCase(), m: $('fMethod').value, days: Number($('fRange').value || 0) });
+  const inRange = (iso, days) => !days || (iso && Date.now() - Date.parse(iso) <= days * 864e5);
+  const matches = (obj, q) => !q || Object.values(obj).some(v => String(v == null ? '' : v).toLowerCase().includes(q));
   const loadTable = async () => {
     const th = $('tbl').querySelector('thead'), tb = $('tbl').querySelector('tbody'); th.textContent = ''; tb.textContent = '';
-    const head = (cols) => { const tr = el('tr'); cols.forEach(c => tr.append(el('th', '', c))); th.append(tr); };
-    const empty = (n) => { const tr = el('tr'); const td = el('td', 'empty', 'No records'); td.colSpan = n; tr.append(td); tb.append(tr); };
+    const f = filters(); const showMethod = tab === 'history' || tab === 'payments' || tab === 'withdrawals';
+    $('fMethod').style.display = showMethod ? '' : 'none';
+    const head = (cols) => { lastCols = cols; const tr = el('tr'); cols.forEach(c => tr.append(el('th', '', c))); th.append(tr); };
+    const empty = (n) => { const tr = el('tr'); const td = el('td', 'empty', 'No records match'); td.colSpan = n; tr.append(td); tb.append(tr); };
+    const badgeType = (t) => { const td = el('td'); td.append(el('span', 'badge', `${ICONS[t] || ''} ${t}`)); return td; };
+    const badgeM = (m) => { const td = el('td'); td.append(el('span', 'badge ' + (m || ''), m || '—')); return td; };
+    let rows = [];
+
     if (tab === 'active') {
-      const list = await A('/api/admin/active'); $('cActive').textContent = list.length; head(['Ticket', 'Plate', 'Owner', 'Type', 'Spot', 'Entry', 'Duration', '']);
-      if (!list.length) return empty(8);
-      list.forEach(t => { const tr = el('tr'); const ty = el('td'); ty.append(el('span', 'badge', `${ICONS[t.vehicleType]} ${t.vehicleType}`));
-        const act = el('td'); const b = el('button', 'btn small danger', 'Force exit'); b.addEventListener('click', () => { $('fePlate').value = t.plate; $('feForm').requestSubmit(); }); act.append(b);
-        tr.append(el('td', '', t.id), el('td', '', t.plate), el('td', '', t.owner), ty, el('td', '', t.spotId), el('td', '', fmt(t.entryTime)), el('td', '', dur(t.entryTime)), act); tb.append(tr); });
+      const list = (await A('/api/admin/active')).filter(t => matches(t, f.q) && inRange(t.entryTime, f.days)); $('cActive').textContent = list.length;
+      head(['Ticket', 'Plate', 'Owner', 'Type', 'Spot', 'Entry', 'Duration', '']);
+      if (!list.length) empty(8);
+      list.forEach(t => { const tr = el('tr'); const act = el('td'); const b = el('button', 'btn small danger', 'Force exit'); b.addEventListener('click', () => { $('fePlate').value = t.plate; $('feForm').requestSubmit(); }); act.append(b);
+        tr.append(el('td', '', t.id), el('td', '', t.plate), el('td', '', t.owner), badgeType(t.vehicleType), el('td', '', t.spotId), el('td', '', fmt(t.entryTime)), el('td', '', dur(t.entryTime)), act); tb.append(tr);
+        rows.push([t.id, t.plate, t.owner, t.vehicleType, t.spotId, t.entryTime, dur(t.entryTime)]); });
+      $('tblSummary').textContent = `${list.length} vehicle(s) currently parked`;
+
     } else if (tab === 'history') {
-      const list = await A('/api/admin/history'); head(['Ticket', 'Plate', 'Owner', 'Type', 'Spot', 'Entry', 'Exit', 'Method', 'Account', 'TXN Ref', 'Fee']);
-      if (!list.length) return empty(11);
-      list.forEach(t => { const tr = el('tr'); const ty = el('td'); ty.append(el('span', 'badge', `${ICONS[t.vehicleType]} ${t.vehicleType}`)); const pm = el('td'); pm.append(el('span', 'badge ' + (t.paymentMethod || ''), t.paymentMethod || '—'));
-        tr.append(el('td', '', t.id), el('td', '', t.plate), el('td', '', t.owner), ty, el('td', '', t.spotId), el('td', '', fmt(t.entryTime)), el('td', '', fmt(t.exitTime)), pm, el('td', '', t.paymentAccount || '—'), el('td', '', t.paymentRef || '—'), el('td', '', money(t.fee))); tb.append(tr); });
-    } else {
-      const list = await A('/api/admin/withdrawals'); head(['ID', 'Method', 'Account', 'Amount', 'Time', 'Reference', '']);
-      if (!list.length) return empty(7);
-      list.forEach(w => { const tr = el('tr'); const pm = el('td'); pm.append(el('span', 'badge ' + w.method, w.methodLabel)); const act = el('td'); const b = el('button', 'btn small ghost', 'Receipt'); b.addEventListener('click', () => showWd(w)); act.append(b);
-        tr.append(el('td', '', w.id), pm, el('td', '', w.account), el('td', '', money(w.amount)), el('td', '', fmt(w.time)), el('td', '', w.reference), act); tb.append(tr); });
+      // Full history: every ticket ever (active + closed), newest first
+      const [act, hist] = await Promise.all([A('/api/admin/active'), A('/api/admin/history')]);
+      const list = [...act, ...hist].filter(t => matches(t, f.q) && (!f.m || t.paymentMethod === f.m) && inRange(t.entryTime, f.days)).sort((a, b) => b.entryTime.localeCompare(a.entryTime));
+      head(['Ticket', 'Status', 'Plate', 'Owner', 'Type', 'Spot', 'Entry', 'Exit', 'Duration', 'Method', 'Fee']);
+      if (!list.length) empty(11);
+      let total = 0;
+      list.forEach(t => { const tr = el('tr'); const st = el('td'); st.append(el('span', 'badge ' + (t.active ? 'CASH' : ''), t.active ? 'ACTIVE' : 'CLOSED'));
+        const d = t.active ? dur(t.entryTime) : (() => { const m = Math.max(0, Math.round((Date.parse(t.exitTime) - Date.parse(t.entryTime)) / 60000)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`; })();
+        tr.append(el('td', '', t.id), st, el('td', '', t.plate), el('td', '', t.owner), badgeType(t.vehicleType), el('td', '', t.spotId), el('td', '', fmt(t.entryTime)), el('td', '', fmt(t.exitTime)), el('td', '', d), badgeM(t.paymentMethod), el('td', '', t.active ? '—' : money(t.fee))); tb.append(tr);
+        if (!t.active) total += t.fee; rows.push([t.id, t.active ? 'ACTIVE' : 'CLOSED', t.plate, t.owner, t.vehicleType, t.spotId, t.entryTime, t.exitTime || '', d, t.paymentMethod || '', t.active ? '' : t.fee]); });
+      $('tblSummary').textContent = `${list.length} ticket(s) · ${list.filter(t => t.active).length} active · Revenue in view: ${money(total)}`;
+
+    } else if (tab === 'payments') {
+      const list = (await A('/api/admin/history')).filter(t => t.paymentRef && matches(t, f.q) && (!f.m || t.paymentMethod === f.m) && inRange(t.exitTime, f.days));
+      head(['TXN Ref', 'Paid At', 'Ticket', 'Plate', 'Owner', 'Method', 'Account', 'Amount']);
+      if (!list.length) empty(8);
+      let total = 0;
+      list.forEach(t => { const tr = el('tr'); tr.append(el('td', '', t.paymentRef), el('td', '', fmt(t.exitTime)), el('td', '', t.id), el('td', '', t.plate), el('td', '', t.owner), badgeM(t.paymentMethod), el('td', '', t.paymentAccount || '—'), el('td', '', money(t.fee))); tb.append(tr);
+        total += t.fee; rows.push([t.paymentRef, t.exitTime, t.id, t.plate, t.owner, t.paymentMethod, t.paymentAccount || '', t.fee]); });
+      $('tblSummary').textContent = `${list.length} payment(s) · Total: ${money(total)}`;
+
+    } else if (tab === 'withdrawals') {
+      const list = (await A('/api/admin/withdrawals')).filter(w => matches(w, f.q) && (!f.m || w.method === f.m) && inRange(w.time, f.days));
+      head(['ID', 'Method', 'Account', 'Amount', 'Time', 'Reference', '']);
+      if (!list.length) empty(7);
+      let total = 0;
+      list.forEach(w => { const tr = el('tr'); const act = el('td'); const b = el('button', 'btn small ghost', 'Receipt'); b.addEventListener('click', () => showWd(w)); act.append(b);
+        tr.append(el('td', '', w.id), badgeM(w.method), el('td', '', w.account), el('td', '', money(w.amount)), el('td', '', fmt(w.time)), el('td', '', w.reference), act); tb.append(tr);
+        total += w.amount; rows.push([w.id, w.method, w.account, w.amount, w.time, w.reference]); });
+      $('tblSummary').textContent = `${list.length} withdrawal(s) · Total: ${money(total)}`;
+
+    } else if (tab === 'vehicles') {
+      const list = (await A('/api/admin/vehicles')).filter(v => matches(v, f.q) && inRange(v.lastSeen, f.days));
+      head(['Plate', 'Owner', 'Type', 'Visits', 'Total Paid', 'First Seen', 'Last Seen', 'Status']);
+      if (!list.length) empty(8);
+      list.forEach(v => { const tr = el('tr'); const st = el('td'); st.append(el('span', 'badge ' + (v.active ? 'CASH' : ''), v.active ? 'PARKED' : 'AWAY'));
+        tr.append(el('td', '', v.plate), el('td', '', v.owner), badgeType(v.vehicleType), el('td', '', v.visits), el('td', '', money(v.totalPaid)), el('td', '', fmt(v.firstSeen)), el('td', '', fmt(v.lastSeen)), st); tb.append(tr);
+        rows.push([v.plate, v.owner, v.vehicleType, v.visits, v.totalPaid, v.firstSeen, v.lastSeen, v.active ? 'PARKED' : 'AWAY']); });
+      $('tblSummary').textContent = `${list.length} registered vehicle(s)`;
     }
+    lastRows = rows;
   };
+  const exportCsv = () => {
+    if (!lastRows.length) return toast('Nothing to export', 'err');
+    const esc = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const csv = [lastCols.filter(c => c).join(','), ...lastRows.map(r => r.map(esc).join(','))].join('\n');
+    const a = el('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })); a.download = `parking-${tab}-${new Date().toISOString().slice(0, 10)}.csv`; document.body.append(a); a.click(); a.remove();
+  };
+  let fTimer; ['fSearch', 'fMethod', 'fRange'].forEach(id => $(id).addEventListener('input', () => { clearTimeout(fTimer); fTimer = setTimeout(() => guard(loadTable)(), 200); }));
+  $('fCsv').addEventListener('click', exportCsv);
   const refresh = guard(() => Promise.all([loadStats(), loadFloors(), loadTable()]));
 
   /* ---------- Actions ---------- */

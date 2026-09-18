@@ -34,7 +34,9 @@ window.FSP = (() => {
   const toast = (msg, type = 'ok') => { const t = $('toast'); if (!t) return; t.textContent = msg; t.className = `toast show ${type}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3400); };
 
   /* 3D tilt on cards */
+  const isTouch = matchMedia('(hover: none)').matches;
   const tilt = (root = document) => {
+    if (isTouch) return;
     root.querySelectorAll('.tilt').forEach(c => {
       if (c.dataset.tilt) return; c.dataset.tilt = '1';
       c.addEventListener('mousemove', (e) => {
@@ -104,6 +106,63 @@ window.FSP = (() => {
     const total = isExit ? `<tr class="t"><td>TOTAL PAID</td><td>${esc(money(t.fee))}</td></tr>` : '';
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ${esc(t.id)}</title><style>body{font-family:Segoe UI,system-ui,sans-serif;background:#f3f5f9;margin:0;padding:30px;display:flex;justify-content:center}.r{background:#fff;width:380px;padding:28px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12)}h1{margin:0;font-size:1.2rem;letter-spacing:2px;text-align:center}h1+p{text-align:center;color:#64748b;margin:4px 0 18px;font-size:.8rem}table{width:100%;border-collapse:collapse;font-size:.9rem}td{padding:7px 0;border-bottom:1px dashed #e2e8f0}td:last-child{text-align:right;font-weight:600;word-break:break-all}tr.t td{border:none;font-size:1.15rem;color:#2563eb;padding-top:14px;font-weight:800}.s{margin-top:16px;font-size:.6rem;color:#94a3b8;word-break:break-all}.ok{margin-top:14px;text-align:center;font-size:.75rem;color:#059669;font-weight:700}@media print{body{background:#fff;padding:0}.r{box-shadow:none}}</style></head><body><div class="r"><h1>★ FIVE STAR PARKING ★</h1><p>${isExit ? 'PAYMENT RECEIPT' : 'ENTRY TICKET'}</p><table>${tr}${total}</table><div class="ok">✔ Digitally signed &amp; verified</div><div class="s">Signature: ${esc(t.signature || '')}</div></div></body></html>`;
   };
+  /* ---- Receipt as PNG image (canvas) ---- */
+  const rrect = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+  const wrapText = (ctx, text, maxW) => { const words = String(text).split(' '); const lines = []; let cur = ''; words.forEach(w => { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }); if (cur) lines.push(cur); return lines; };
+  const receiptCanvas = (t, isExit) => {
+    const W = 720, pad = 44, scale = 2;
+    const rows = [['Ticket #', t.id], ['Plate', t.plate], ['Owner', t.owner], ['Vehicle', t.vehicleType], ['Spot', t.spotId], ['Entry', fmt(t.entryTime)]];
+    if (isExit) rows.push(['Exit', fmt(t.exitTime)], ['Rate / hr', money(t.hourlyRate)], ['Payment', t.paymentMethod || 'CASH']);
+    if (isExit && t.paymentAccount) rows.push(['Account', t.paymentAccount]);
+    if (isExit && t.paymentRef) rows.push(['TXN Ref', t.paymentRef]);
+    const H = 300 + rows.length * 46 + (isExit ? 90 : 0) + 200;
+    const c = document.createElement('canvas'); c.width = W * scale; c.height = H * scale;
+    const ctx = c.getContext('2d'); ctx.scale(scale, scale);
+    ctx.fillStyle = '#eef2f7'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff'; ctx.shadowColor = 'rgba(0,0,0,.15)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+    rrect(ctx, 20, 20, W - 40, H - 40, 22); ctx.fill(); ctx.shadowColor = 'transparent';
+    const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#2563eb'); g.addColorStop(1, '#7c3aed');
+    ctx.save(); rrect(ctx, 20, 20, W - 40, H - 40, 22); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(20, 20, W - 40, 120); ctx.restore();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 30px Segoe UI, Arial, sans-serif'; ctx.fillText('\u2605 FIVE STAR PARKING \u2605', W / 2, 72);
+    ctx.font = '16px Segoe UI, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillText(isExit ? 'PAYMENT RECEIPT' : 'ENTRY TICKET', W / 2, 104);
+    let y = 190; ctx.textAlign = 'left';
+    rows.forEach(([k, v]) => {
+      ctx.fillStyle = '#64748b'; ctx.font = '16px Segoe UI, Arial, sans-serif'; ctx.fillText(k, pad, y);
+      ctx.fillStyle = '#111827'; ctx.font = 'bold 17px Segoe UI, Arial, sans-serif'; ctx.textAlign = 'right'; ctx.fillText(String(v == null ? '' : v), W - pad, y); ctx.textAlign = 'left';
+      ctx.strokeStyle = '#e2e8f0'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(pad, y + 14); ctx.lineTo(W - pad, y + 14); ctx.stroke(); ctx.setLineDash([]);
+      y += 46;
+    });
+    if (isExit) {
+      y += 14; ctx.fillStyle = '#eff6ff'; rrect(ctx, pad - 10, y - 30, W - pad * 2 + 20, 64, 14); ctx.fill();
+      ctx.fillStyle = '#1e3a8a'; ctx.font = 'bold 20px Segoe UI, Arial, sans-serif'; ctx.fillText('TOTAL PAID', pad + 6, y + 10);
+      ctx.textAlign = 'right'; ctx.fillStyle = '#2563eb'; ctx.font = 'bold 30px Segoe UI, Arial, sans-serif'; ctx.fillText(money(t.fee), W - pad - 6, y + 12); ctx.textAlign = 'left';
+      y += 76;
+    }
+    y += 16; const n = 21, cell = 5, qx = W / 2 - (n * cell) / 2; let h = 2166136261; const key = t.id + t.plate;
+    ctx.fillStyle = '#111';
+    for (let i = 0; i < n * n; i++) { h ^= key.charCodeAt(i % key.length); h = Math.imul(h, 16777619) >>> 0; if ((h >>> 7) & 1) ctx.fillRect(qx + (i % n) * cell, y + Math.floor(i / n) * cell, cell, cell); }
+    const finder = (fx, fy) => { ctx.fillStyle = '#111'; ctx.fillRect(fx, fy, 7 * cell, 7 * cell); ctx.fillStyle = '#fff'; ctx.fillRect(fx + cell, fy + cell, 5 * cell, 5 * cell); ctx.fillStyle = '#111'; ctx.fillRect(fx + 2 * cell, fy + 2 * cell, 3 * cell, 3 * cell); };
+    finder(qx, y); finder(qx + (n - 7) * cell, y); finder(qx, y + (n - 7) * cell);
+    y += n * cell + 30;
+    ctx.textAlign = 'center'; ctx.fillStyle = '#059669'; ctx.font = 'bold 14px Segoe UI, Arial, sans-serif'; ctx.fillText('\u2714 Digitally signed & verified', W / 2, y); y += 22;
+    ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace'; wrapText(ctx, 'Signature: ' + (t.signature || ''), W - pad * 2).forEach(l => { ctx.fillText(l, W / 2, y); y += 13; });
+    ctx.fillStyle = '#94a3b8'; ctx.font = '12px Segoe UI, Arial, sans-serif'; ctx.fillText('Keep this receipt. Thank you for parking with us.', W / 2, H - 40);
+    return c;
+  };
+  const downloadReceiptImage = (t, isExit) => new Promise((resolve) => {
+    const c = receiptCanvas(t, isExit); const name = `receipt-${t.id}.png`;
+    if (c.toBlob) c.toBlob(b => { saveBlob(b, name); resolve(); }, 'image/png');
+    else { const a = el('a'); a.href = c.toDataURL('image/png'); a.download = name; document.body.append(a); a.click(); a.remove(); resolve(); }
+  });
+  const shareReceiptImage = async (t, isExit) => {
+    if (!navigator.share || !navigator.canShare) return false;
+    const c = receiptCanvas(t, isExit);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const file = new File([blob], `receipt-${t.id}.png`, { type: 'image/png' });
+    if (!navigator.canShare({ files: [file] })) return false;
+    try { await navigator.share({ files: [file], title: 'Parking receipt ' + t.id }); return true; } catch (_) { return false; }
+  };
+
   const saveBlob = (blob, name) => { const a = el('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
   const downloadReceipt = (t, isExit) => saveBlob(new Blob([receiptHtml(t, isExit)], { type: 'text/html' }), `receipt-${t.id}.html`);
   const printReceipt = (t, isExit) => {
@@ -136,5 +195,5 @@ window.FSP = (() => {
     });
   };
 
-  return { $, el, money, fmt, dur, api, toast, tilt, countTo, renderReceipt, downloadTicket, downloadReceipt, printReceipt, renderFloors, ICONS, METHOD_ICON };
+  return { $, el, money, fmt, dur, api, toast, tilt, countTo, renderReceipt, downloadTicket, downloadReceipt, downloadReceiptImage, shareReceiptImage, printReceipt, renderFloors, ICONS, METHOD_ICON };
 })();

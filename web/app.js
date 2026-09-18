@@ -1,7 +1,7 @@
 /* Five Star Parking — public UI */
 (() => {
   'use strict';
-  const { $, el, money, fmt, dur, api, toast, tilt, countTo, renderReceipt, downloadTicket, downloadReceipt, printReceipt, renderFloors, ICONS, METHOD_ICON } = FSP;
+  const { $, el, money, fmt, dur, api, toast, tilt, countTo, renderReceipt, downloadTicket, downloadReceipt, downloadReceiptImage, shareReceiptImage, printReceipt, renderFloors, ICONS, METHOD_ICON } = FSP;
   let methods = [], selectedMethod = 'CASH', currentTicket = null, lastReceipt = null, lastIsExit = false;
 
   /* ---------- Modal ---------- */
@@ -12,7 +12,9 @@
   $('mClose').addEventListener('click', () => { $('modal').hidden = true; });
   $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) $('modal').hidden = true; });
   $('mDownload').addEventListener('click', () => lastReceipt && downloadTicket(lastReceipt));
-  $('mReceipt').addEventListener('click', () => lastReceipt && downloadReceipt(lastReceipt, lastIsExit));
+  $('mReceipt').addEventListener('click', () => { if (lastReceipt) downloadReceiptImage(lastReceipt, lastIsExit).then(() => toast('Receipt image saved')); });
+  $('mShare').addEventListener('click', async () => { if (!lastReceipt) return; const ok = await shareReceiptImage(lastReceipt, lastIsExit); if (!ok) { await downloadReceiptImage(lastReceipt, lastIsExit); toast('Sharing not supported here — image downloaded instead'); } });
+  $('mHtml').addEventListener('click', () => lastReceipt && downloadReceipt(lastReceipt, lastIsExit));
   $('mPrint').addEventListener('click', () => lastReceipt && printReceipt(lastReceipt, lastIsExit));
 
   /* ---------- Loaders ---------- */

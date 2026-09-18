@@ -2,7 +2,9 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Five Star Parking — Smart Parking Management</title>
 <link rel="icon" href="img/logo.svg">
 <link rel="stylesheet" href="style.css">
@@ -14,7 +16,8 @@
     <div><h1>Five Star Parking</h1><span>Smart Parking Management System</span></div>
   </a>
   <div class="topbar-right">
-    <nav class="nav"><a href="#entry">Entry</a><a href="#exit">Exit</a><a href="#map">Floor Map</a><a href="#trust">Security</a><a href="/admin">Admin</a></nav>
+    <nav class="nav" id="nav"><a href="#entry">Entry</a><a href="#exit">Exit</a><a href="#map">Floor Map</a><a href="#trust">Security</a><a href="/admin">Admin</a></nav>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
     <span class="clock" id="clock"></span>
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Light / Dark"><span class="sun">☀️</span><span class="moon">🌙</span></button>
   </div>
@@ -130,8 +133,10 @@
     <h3 id="mTitle">Receipt</h3>
     <div id="mBody" class="receipt"></div>
     <div class="row">
-      <button class="btn primary" id="mDownload">⬇ Ticket File (.json)</button>
-      <button class="btn success" id="mReceipt">🧾 Download Receipt</button>
+      <button class="btn success" id="mReceipt">🖼 Download Receipt (Image)</button>
+      <button class="btn primary" id="mShare">📤 Share Image</button>
+      <button class="btn ghost" id="mDownload">⬇ Ticket File (.json)</button>
+      <button class="btn ghost" id="mHtml">📄 HTML Copy</button>
       <button class="btn ghost" id="mPrint">🖨 Print</button>
       <button class="btn ghost" id="mClose">Close</button>
     </div>
@@ -141,6 +146,7 @@
 <div class="toast" id="toast"></div>
 <footer class="foot">Java OOP Backend · HTML/CSS/JS Frontend · <span id="lotName"></span> · <a href="/admin">Admin Panel</a></footer>
 <script src="common.js"></script>
+<script>(function(){var b=document.getElementById("burger"),n=document.getElementById("nav");if(!b)return;b.addEventListener("click",function(){var o=n.classList.toggle("open");b.setAttribute("aria-expanded",o)});n.addEventListener("click",function(e){if(e.target.tagName==="A")n.classList.remove("open")})})();</script>
 <script src="app.js"></script>
 </body>
 </html>
