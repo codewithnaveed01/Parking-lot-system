@@ -108,7 +108,6 @@ public class ApiServer {
                 case "/api/admin/active":  get(method); result = ticketsView(service.getActiveTickets(), false); break;
                 case "/api/admin/floors":  get(method); result = floorsView(true); break;
                 case "/api/admin/withdrawals": get(method); result = withdrawalsView(); break;
-                case "/api/admin/vehicles": get(method); result = new ArrayList<Object>(service.getVehicleDirectory()); break;
                 case "/api/admin/withdraw": {
                     post(method);
                     Map<String, String> b = body(ex);

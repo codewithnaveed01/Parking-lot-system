@@ -28,10 +28,10 @@ public class Main {
         if ("admin1122".equals(adminPass) && System.getenv("DATABASE_URL") != null)
             System.err.println("WARNING: using default admin password in production. Set ADMIN_PASS!");
 
-        TicketRepository tickets; WithdrawalRepository withdrawals; SettingsRepository settings; Database db = null;
+        TicketRepository tickets; WithdrawalRepository withdrawals; SettingsRepository settings;
         String dbUrl = System.getenv("DATABASE_URL");
         if (dbUrl != null && !dbUrl.isBlank()) {
-            db = new Database(dbUrl.trim());
+            Database db = new Database(dbUrl.trim());
             tickets = new PostgresTicketRepository(db);
             withdrawals = new PostgresWithdrawalRepository(db);
             settings = new PostgresSettingsRepository(db);
@@ -45,11 +45,7 @@ public class Main {
 
         RateTable rates = new RateTable(settings);
         Crypto crypto = new Crypto(data.resolve("secret.key"));
-        // Layout must exist in DB before tickets reference spots (FK). Build floors first, then service restores tickets.
-        java.util.List<com.parking.model.ParkingFloor> layout = new java.util.ArrayList<>();
-        for (int f = 1; f <= floors; f++) layout.add(new com.parking.model.ParkingFloor(f, 4, 8, 3, 1));
-        if (db != null) db.syncLayout(layout);
-        ParkingLotService service = new ParkingLotService("Five Star Parking", floors, tickets, withdrawals, rates, new HourlyPricing(rates), crypto, settings);
+        ParkingLotService service = new ParkingLotService("Five Star Parking", floors, tickets, withdrawals, rates, new HourlyPricing(rates), crypto);
         AdminAuthService auth = new AdminAuthService(adminUser, adminPass);
 
         ApiServer server = new ApiServer(service, auth, Paths.get("web"), port);

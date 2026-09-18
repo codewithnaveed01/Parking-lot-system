@@ -3,7 +3,6 @@ package com.parking.service;
 import com.parking.model.*;
 import com.parking.repository.TicketRepository;
 import com.parking.repository.WithdrawalRepository;
-import com.parking.repository.SettingsRepository;
 import com.parking.util.Crypto;
 
 import java.time.Duration;
@@ -25,16 +24,10 @@ public class ParkingLotService {
     private final Crypto crypto;
     private PricingStrategy pricing;
     private final Set<String> blockedSpots = new HashSet<>();
-    private final SettingsRepository settings;
 
     public ParkingLotService(String name, int floorCount, TicketRepository repo, WithdrawalRepository withdrawals,
                              RateTable rateTable, PricingStrategy pricing, Crypto crypto) {
-        this(name, floorCount, repo, withdrawals, rateTable, pricing, crypto, null);
-    }
-
-    public ParkingLotService(String name, int floorCount, TicketRepository repo, WithdrawalRepository withdrawals,
-                             RateTable rateTable, PricingStrategy pricing, Crypto crypto, SettingsRepository settings) {
-        this.name = name; this.repo = repo; this.withdrawals = withdrawals; this.settings = settings;
+        this.name = name; this.repo = repo; this.withdrawals = withdrawals;
         this.rateTable = rateTable; this.pricing = pricing; this.crypto = crypto;
         for (int f = 1; f <= floorCount; f++) {
             ParkingFloor floor = new ParkingFloor(f, 4, 8, 3, 1);
@@ -42,10 +35,6 @@ public class ParkingLotService {
             floor.getSpots().forEach(s -> spotIndex.put(s.getId(), s));
         }
         restore();
-        if (settings != null) {
-            String b = settings.loadAll().get("blocked_spots");
-            if (b != null && !b.isEmpty()) for (String id : b.split(",")) if (spotIndex.containsKey(id)) blockedSpots.add(id);
-        }
     }
 
     private void restore() {
@@ -154,7 +143,6 @@ public class ParkingLotService {
         if (s == null) throw new ParkingException("Spot not found", 404);
         if (blocked && !s.isFree()) throw new ParkingException("Cannot block an occupied spot", 409);
         if (blocked) blockedSpots.add(spotId); else blockedSpots.remove(spotId);
-        if (settings != null) settings.put("blocked_spots", String.join(",", new TreeSet<>(blockedSpots)));
     }
     public synchronized boolean isBlocked(String spotId) { return blockedSpots.contains(spotId); }
 
@@ -188,28 +176,6 @@ public class ParkingLotService {
     }
     public synchronized List<Withdrawal> getWithdrawals() {
         List<Withdrawal> l = withdrawals.findAll(); Collections.reverse(l); return l;
-    }
-
-    /** Customer/vehicle directory aggregated from all tickets. */
-    public synchronized List<Map<String, Object>> getVehicleDirectory() {
-        Map<String, Map<String, Object>> byPlate = new LinkedHashMap<>();
-        for (Ticket t : repo.findAll()) {
-            String plate = t.getVehicle().getLicensePlate();
-            Map<String, Object> m = byPlate.computeIfAbsent(plate, k -> {
-                Map<String, Object> x = new LinkedHashMap<>();
-                x.put("plate", k); x.put("owner", t.getVehicle().getOwnerName()); x.put("vehicleType", t.getVehicle().getType().name());
-                x.put("visits", 0L); x.put("totalPaid", 0.0); x.put("firstSeen", t.getEntryTime().toString()); x.put("lastSeen", t.getEntryTime().toString()); x.put("active", false);
-                return x;
-            });
-            m.put("visits", (Long) m.get("visits") + 1);
-            m.put("totalPaid", (Double) m.get("totalPaid") + (t.isActive() ? 0 : t.getFee()));
-            if (!"Unknown".equals(t.getVehicle().getOwnerName())) m.put("owner", t.getVehicle().getOwnerName());
-            if (t.getEntryTime().toString().compareTo((String) m.get("lastSeen")) > 0) m.put("lastSeen", t.getEntryTime().toString());
-            if (t.isActive()) m.put("active", true);
-        }
-        List<Map<String, Object>> out = new ArrayList<>(byPlate.values());
-        out.sort((a, b) -> ((String) b.get("lastSeen")).compareTo((String) a.get("lastSeen")));
-        return out;
     }
 
     public synchronized double totalRevenue() {

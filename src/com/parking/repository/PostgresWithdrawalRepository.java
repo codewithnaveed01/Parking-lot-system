@@ -16,7 +16,6 @@ public class PostgresWithdrawalRepository implements WithdrawalRepository {
             ps.setBigDecimal(4, java.math.BigDecimal.valueOf(w.getAmount())); ps.setTimestamp(5, Timestamp.from(w.getTime())); ps.setString(6, w.getReference());
             ps.executeUpdate();
         } catch (SQLException e) { throw new IllegalStateException("DB save failed: " + e.getMessage(), e); }
-        db.audit("admin", "WITHDRAW", w.getId(), w.getAmount() + " via " + w.getMethod() + " to " + w.getAccount());
     }
 
     @Override public List<Withdrawal> findAll() {

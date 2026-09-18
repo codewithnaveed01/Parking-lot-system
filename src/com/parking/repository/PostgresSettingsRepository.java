@@ -17,9 +17,8 @@ public class PostgresSettingsRepository implements SettingsRepository {
 
     @Override public void put(String key, String value) {
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()")) {
+                "INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")) {
             ps.setString(1, key); ps.setString(2, value); ps.executeUpdate();
         } catch (SQLException e) { throw new IllegalStateException("DB save failed: " + e.getMessage(), e); }
-        db.audit("admin", "SETTING", key, value);
     }
 }
