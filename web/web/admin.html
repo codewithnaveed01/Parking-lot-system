@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Five Star Parking</title>
+<link rel="icon" href="img/logo.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <img src="img/logo.svg" alt="logo">
+    <div><h1>Five Star Parking</h1><span>Admin Control Panel</span></div>
+  </a>
+  <div class="topbar-right">
+    <nav class="nav"><a href="/">← Public Site</a></nav>
+    <span class="clock" id="clock"></span>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><span class="sun">☀️</span><span class="moon">🌙</span></button>
+    <button class="btn ghost small hidden" id="logoutBtn">Logout</button>
+  </div>
+</header>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginView">
+  <div class="login-box">
+    <div class="lock">🔐</div>
+    <h2>Admin Login</h2>
+    <p class="muted small">Authorized personnel only. All actions are logged.</p>
+    <form id="loginForm" autocomplete="off">
+      <label>Username<input id="lUser" required maxlength="40" autocomplete="username"></label>
+      <label>Password<input id="lPass" type="password" required maxlength="80" autocomplete="current-password"></label>
+      <button class="btn primary" type="submit">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<main class="container hidden" id="dash">
+  <section class="admin-grid">
+    <div class="balance">
+      <span class="label">Available Balance</span>
+      <strong id="bAvail">–</strong>
+      <div class="sub"><span>Total collected: <b id="bTotal">–</b></span><span>Withdrawn: <b id="bWd">–</b></span><span>Last 24h: <b id="b24">–</b></span></div>
+    </div>
+    <section class="card tilt" style="margin:0">
+      <h2><span class="ic">📈</span>Revenue by Method</h2>
+      <div class="chart" id="chart"></div>
+    </section>
+    <section class="card tilt" style="margin:0">
+      <h2><span class="ic">📊</span>Lot Overview</h2>
+      <div class="kpi-mini">
+        <div><span>Total spots</span><b id="kTotal">–</b></div><div><span>Free</span><b id="kFree">–</b></div>
+        <div><span>Occupied</span><b id="kOcc">–</b></div><div><span>Blocked</span><b id="kBlk">–</b></div>
+        <div><span>Tickets (all time)</span><b id="kTickets">–</b></div><div><span>Vehicles 24h</span><b id="k24">–</b></div>
+      </div>
+    </section>
+  </section>
+
+  <div class="grid" style="margin-top:22px">
+    <!-- WITHDRAW -->
+    <section class="card tilt">
+      <h2><span class="ic">🏧</span>Withdraw Funds</h2>
+      <form id="wdForm" autocomplete="off">
+        <label>Payout Method</label>
+        <div class="methods" id="wdMethods"></div>
+        <label><span id="wdAcctLabel">Mobile Number</span><input id="wdAccount" required maxlength="34" placeholder="03XXXXXXXXX"></label>
+        <label>Amount (PKR)<input id="wdAmount" type="number" min="1" step="0.01" required placeholder="0.00"></label>
+        <div class="row"><button type="button" class="btn ghost" id="wdMax">Max</button><button class="btn success" type="submit">Withdraw</button></div>
+      </form>
+    </section>
+
+    <!-- RATES -->
+    <section class="card tilt">
+      <h2><span class="ic">💰</span>Manage Rates</h2>
+      <table class="rates"><tbody id="rateRows"></tbody></table>
+      <p class="muted small">Changes apply instantly to all new exits.</p>
+    </section>
+
+    <!-- FORCE EXIT -->
+    <section class="card tilt">
+      <h2><span class="ic">🚨</span>Manual Controls</h2>
+      <form id="feForm" autocomplete="off">
+        <label>Force Exit (plate) <span class="muted">— records as cash</span><input id="fePlate" maxlength="15" required placeholder="e.g. LEA-4521"></label>
+        <button class="btn danger" type="submit" style="width:100%">Force Exit Vehicle</button>
+      </form>
+      <p class="muted small" style="margin-top:14px">💡 Click any <b>free</b> spot on the map below to block/unblock it for maintenance.</p>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h2 style="margin:0"><span class="ic">🗺️</span>Spot Control</h2>
+      <div class="legend"><span><i class="sq free"></i>Free</span><span><i class="sq occupied"></i>Occupied</span><span><i class="sq blocked"></i>Blocked</span></div></div>
+    <div id="floors" class="spot-admin"></div>
+  </section>
+
+  <section class="card">
+    <div class="tabs">
+      <button class="tab active" data-tab="active">Active <span class="pill" id="cActive">0</span></button>
+      <button class="tab" data-tab="history">Transactions</button>
+      <button class="tab" data-tab="withdrawals">Withdrawals</button>
+    </div>
+    <div class="table-wrap"><table class="data" id="tbl"><thead></thead><tbody></tbody></table></div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <h3 id="mTitle">Withdrawal Receipt</h3>
+    <div id="mBody" class="receipt"></div>
+    <div class="row"><button class="btn ghost" id="mClose">Close</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="common.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
