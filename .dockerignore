@@ -1,0 +1,7 @@
+build
+data
+test
+standalone
+*.zip
+*.md
+.git
