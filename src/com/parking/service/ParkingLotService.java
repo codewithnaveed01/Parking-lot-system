@@ -1,220 +1,328 @@
 package com.parking.service;
 
 import com.parking.model.*;
-import com.parking.repository.TicketRepository;
-import com.parking.repository.WithdrawalRepository;
+import com.parking.repository.*;
 import com.parking.util.Crypto;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Core business logic (Facade). All mutating operations are synchronized to prevent races.
- */
+/** Single-level Orbit Park. All capacity-changing operations share this lock. */
 public class ParkingLotService {
+    private static final Map<VehicleType, Integer> CAPACITY = Map.of(
+            VehicleType.MOTORCYCLE, 20, VehicleType.CAR, 40, VehicleType.VAN, 20, VehicleType.TRUCK, 10);
     private final String name;
-    private final List<ParkingFloor> floors = new ArrayList<>();
-    private final Map<String, ParkingSpot> spotIndex = new HashMap<>();
+    private final Map<String, ParkingSpot> spots = new LinkedHashMap<>();
     private final Map<String, Ticket> activeByPlate = new HashMap<>();
-    private final TicketRepository repo;
-    private final WithdrawalRepository withdrawals;
-    private final RateTable rateTable;
-    private final Crypto crypto;
-    private PricingStrategy pricing;
     private final Set<String> blockedSpots = new HashSet<>();
+    private final TicketRepository repo;
+    private final SettingsRepository settings;
+    private final RateTable rates;
+    private final HourlyPricing pricing;
+    private final Crypto crypto;
+    private final PaymentConfig paymentConfig;
 
-    public ParkingLotService(String name, int floorCount, TicketRepository repo, WithdrawalRepository withdrawals,
-                             RateTable rateTable, PricingStrategy pricing, Crypto crypto) {
-        this.name = name; this.repo = repo; this.withdrawals = withdrawals;
-        this.rateTable = rateTable; this.pricing = pricing; this.crypto = crypto;
-        for (int f = 1; f <= floorCount; f++) {
-            ParkingFloor floor = new ParkingFloor(f, 4, 8, 3, 1);
-            floors.add(floor);
-            floor.getSpots().forEach(s -> spotIndex.put(s.getId(), s));
+    public ParkingLotService(String name, TicketRepository repo, SettingsRepository settings,
+                             RateTable rates, HourlyPricing pricing, Crypto crypto, PaymentConfig paymentConfig) {
+        this.name = name; this.repo = repo; this.settings = settings;
+        this.rates = rates; this.pricing = pricing; this.crypto = crypto; this.paymentConfig = paymentConfig;
+        for (VehicleType vt : VehicleType.values()) {
+            for (int n = 1; n <= CAPACITY.get(vt); n++) {
+                ParkingSpot spot = new ParkingSpot(vt, n);
+                spots.put(spot.getId(), spot);
+            }
         }
+        settings.loadAll().forEach((k, v) -> {
+            if (k.startsWith("blocked.") && "true".equals(v) && spots.containsKey(k.substring(8))) blockedSpots.add(k.substring(8));
+        });
         restore();
     }
 
     private void restore() {
+        List<Ticket> legacy = new ArrayList<>();
         for (Ticket t : repo.findAll()) {
-            if (t.isActive()) {
-                ParkingSpot s = spotIndex.get(t.getSpotId());
-                if (s != null && s.canPark(t.getVehicle())) {
-                    s.park(t.getVehicle());
-                    activeByPlate.put(t.getVehicle().getLicensePlate(), t);
-                }
+            if (!t.isActive()) continue;
+            if (t.getStatus() == Ticket.Status.RESERVED && !Instant.now().isBefore(t.getExpiresAt())) {
+                Ticket expired = t.copy(); expired.expire(Instant.now()); repo.save(expired); continue;
+            }
+            ParkingSpot spot = spots.get(t.getSpotId());
+            // First protect all valid assignments, irrespective of file row order.
+            // Only then allocate legacy floor tickets from remaining zone capacity.
+            if (spot == null || spot.getZone() != t.getVehicle().getType()) legacy.add(t);
+            else restoreSpot(t, spot);
+        }
+        for (Ticket t : legacy) {
+            String legacyId = t.getId();
+            if (activeByPlate.containsKey(t.getVehicle().getLicensePlate()))
+                throw new IllegalStateException("Duplicate active plate in storage: " + t.getVehicle().getLicensePlate());
+            ParkingSpot spot = bestSpot(t.getVehicle()).orElseThrow(() ->
+                    new IllegalStateException("No free bay for legacy ticket " + legacyId));
+            Ticket moved = t.copy(); moved.setSpotId(spot.getId()); repo.save(moved);
+            restoreSpot(moved, spot);
+        }
+    }
+
+    private void restoreSpot(Ticket t, ParkingSpot spot) {
+        String plate = t.getVehicle().getLicensePlate();
+        if (activeByPlate.containsKey(plate)) throw new IllegalStateException("Duplicate active plate in storage: " + plate);
+        if (!spot.canPark(t.getVehicle())) throw new IllegalStateException("Duplicate active spot in storage: " + spot.getId());
+        if (blockedSpots.remove(spot.getId())) settings.put("blocked." + spot.getId(), "false");
+        spot.park(t.getVehicle()); activeByPlate.put(plate, t);
+    }
+
+    private void expireReservations() {
+        Instant now = Instant.now();
+        for (Ticket t : new ArrayList<>(activeByPlate.values())) {
+            if (t.getStatus() == Ticket.Status.RESERVED && !now.isBefore(t.getExpiresAt())) {
+                Ticket updated = t.copy(); updated.expire(now); repo.save(updated);
+                activeByPlate.remove(t.getVehicle().getLicensePlate()); spots.get(t.getSpotId()).release();
             }
         }
     }
 
-    public synchronized void setPricing(PricingStrategy p) { this.pricing = Objects.requireNonNull(p); }
+    private Optional<ParkingSpot> bestSpot(Vehicle vehicle) {
+        return spots.values().stream().filter(s -> !blockedSpots.contains(s.getId()) && s.canPark(vehicle)).findFirst();
+    }
 
-    // ---------- User commands ----------
-    public synchronized Ticket parkVehicle(VehicleType type, String plate, String owner) {
+    public synchronized Ticket reserve(VehicleType type, String plate, String owner) { return allocate(type, plate, owner, Ticket.Channel.ONLINE); }
+    public synchronized Ticket parkVehicle(VehicleType type, String plate, String owner) { return allocate(type, plate, owner, Ticket.Channel.GATE); }
+
+    private Ticket allocate(VehicleType type, String plate, String owner, Ticket.Channel channel) {
+        expireReservations();
         Vehicle v = Vehicle.create(type, plate, owner);
-        if (activeByPlate.containsKey(v.getLicensePlate()))
-            throw new ParkingException("Vehicle " + v.getLicensePlate() + " is already parked", 409);
-        ParkingSpot spot = findBestSpot(v)
-                .orElseThrow(() -> new ParkingException("No available spot for a " + type.getLabel(), 409));
-        spot.park(v);
-        Ticket t = new Ticket(v, spot.getId());
-        activeByPlate.put(v.getLicensePlate(), t);
+        if (activeByPlate.containsKey(v.getLicensePlate())) throw new ParkingException("This vehicle already has an active booking", 409);
+        ParkingSpot spot = bestSpot(v).orElseThrow(() -> new ParkingException("No free spot in the " + type.getLabel() + " zone", 409));
+        Ticket t = new Ticket(v, spot.getId(), channel, rates.getRate(type));
         repo.save(t);
+        spot.park(v); activeByPlate.put(v.getLicensePlate(), t);
         return t;
     }
 
-    private Optional<ParkingSpot> findBestSpot(Vehicle v) {
-        return floors.stream().flatMap(f -> f.getSpots().stream())
-                .filter(s -> !blockedSpots.contains(s.getId()) && s.canPark(v))
-                .min(Comparator.comparingInt((ParkingSpot s) -> s.getType().getCapacity())
-                        .thenComparingInt(ParkingSpot::getFloor).thenComparingInt(ParkingSpot::getNumber));
+    public synchronized Ticket checkIn(String id, String plate) {
+        Ticket t = requireActive(id, plate);
+        if (t.getStatus() != Ticket.Status.RESERVED) throw new ParkingException("This reservation is already checked in", 409);
+        Ticket updated = t.copy(); updated.checkIn(Instant.now()); repo.save(updated);
+        activeByPlate.put(t.getVehicle().getLicensePlate(), updated);
+        return updated;
     }
 
-    /** Exit + payment. Digital wallets/bank require an account number; cash does not. */
-    public synchronized Ticket exitVehicle(String plateRaw, PaymentMethod method, String account) {
-        String plate = Vehicle.normalizePlate(plateRaw);
-        Ticket t = activeByPlate.get(plate);
-        if (t == null) throw new ParkingException("No active ticket for " + plate, 404);
-        Instant now = Instant.now();
-        double fee = pricing.calculate(t.getVehicle(), Duration.between(t.getEntryTime(), now));
-        String acct = validateAccount(method, account, fee);
-        activeByPlate.remove(plate);
-        t.close(now, fee, rateTable.getRate(t.getVehicle().getType()), method, acct);
-        ParkingSpot s = spotIndex.get(t.getSpotId());
-        if (s != null) s.release();
-        repo.save(t);
+    public synchronized Ticket cancelReservation(String id, String plate, String reason) {
+        Ticket t = requireActive(id, plate);
+        if (t.getStatus() != Ticket.Status.RESERVED) throw new ParkingException("Only unclaimed reservations can be cancelled", 409);
+        Ticket updated = t.copy(); updated.cancel(Instant.now(), reason); finish(t, updated);
+        return updated;
+    }
+
+    private Ticket requireActive(String id, String plate) {
+        expireReservations();
+        Ticket t = publicTicket(id, plate);
+        if (!t.isActive()) throw new ParkingException("Ticket is no longer active", 409);
         return t;
     }
 
-    private static String validateAccount(PaymentMethod m, String account, double fee) {
-        if (fee <= 0 || !m.needsAccount()) return account == null ? "" : mask(account.trim());
-        if (account == null) throw new ParkingException("Account / mobile number is required for " + m.getLabel());
-        String a = account.replaceAll("[\\s-]", "");
-        if (m == PaymentMethod.BANK) {
-            if (!a.matches("^[A-Za-z0-9]{8,34}$")) throw new ParkingException("Invalid bank account / IBAN");
-        } else if (!a.matches("^03\\d{9}$")) throw new ParkingException("Invalid mobile number (format 03XXXXXXXXX)");
-        return mask(a);
+    public synchronized Ticket publicTicket(String id, String plate) {
+        if (id == null || !id.trim().matches("[A-Za-z0-9]{8,16}")) throw new ParkingException("A valid booking code is required");
+        Ticket t = findTicket(id).orElseThrow(() -> new ParkingException("Booking not found", 404));
+        if (!t.getVehicle().getLicensePlate().equals(Vehicle.normalizePlate(plate))) throw new ParkingException("Booking not found", 404);
+        return t;
     }
 
-    private static String mask(String a) {
-        if (a.length() <= 4) return a;
-        return "*".repeat(a.length() - 4) + a.substring(a.length() - 4);
+    /** Gate search only. Public lookups always require both the code and plate. */
+    public synchronized Ticket gateLookup(String idOrPlate) {
+        expireReservations();
+        if (idOrPlate == null || idOrPlate.isBlank()) throw new ParkingException("Enter a booking code or license plate");
+        String q = idOrPlate.trim().toUpperCase();
+        Ticket t = activeByPlate.get(q);
+        if (t == null) t = findTicket(q).orElse(null);
+        if (t == null) throw new ParkingException("No ticket found", 404);
+        return t;
     }
 
-    // ---------- Receipts (tamper-proof, HMAC signed) ----------
-    public String receiptPayload(Ticket t) {
-        return String.join("|", t.getId(), t.getVehicle().getLicensePlate(), t.getSpotId(),
-                t.getEntryTime().toString(), t.getExitTime() == null ? "" : t.getExitTime().toString(),
-                String.valueOf(t.getFee()));
-    }
-    public String sign(Ticket t) { return crypto.hmac(receiptPayload(t)); }
-
-    /** Verifies an uploaded receipt: {id, plate, signature}. */
-    public synchronized Map<String, Object> verifyReceipt(String id, String plateRaw, String signature) {
-        String plate = Vehicle.normalizePlate(plateRaw);
-        Ticket t = repo.findAll().stream().filter(x -> x.getId().equalsIgnoreCase(id == null ? "" : id.trim())).findFirst()
-                .orElseThrow(() -> new ParkingException("Ticket not found", 404));
-        if (!t.getVehicle().getLicensePlate().equals(plate)) throw new ParkingException("Plate does not match ticket", 400);
-        boolean valid = crypto.verify(receiptPayload(t), signature);
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("valid", valid); m.put("active", t.isActive()); m.put("ticket", t);
-        return m;
+    public synchronized double currentFee(Ticket t) {
+        if (t.getStatus() != Ticket.Status.PARKED) return 0;
+        // The meter stops when a transfer is submitted. This also prevents a
+        // delayed manager verification from unexpectedly increasing the bill.
+        if (t.isPending()) return t.getPendingFee();
+        return feeAt(t, Instant.now());
     }
 
-    // ---------- Admin commands ----------
-    public synchronized Withdrawal withdraw(PaymentMethod method, String account, double amount) {
-        double available = availableBalance();
-        if (amount > available + 1e-9) throw new ParkingException("Insufficient balance. Available: " + available, 409);
-        if (method == PaymentMethod.CASH) throw new ParkingException("Choose EasyPaisa, JazzCash or Bank");
-        String acct = account == null ? "" : account.replaceAll("[\\s-]", "");
-        if (method == PaymentMethod.BANK ? !acct.matches("^[A-Za-z0-9]{8,34}$") : !acct.matches("^03\\d{9}$"))
-            throw new ParkingException(method == PaymentMethod.BANK ? "Invalid bank account / IBAN" : "Invalid mobile number (03XXXXXXXXX)");
-        Withdrawal w = new Withdrawal(method, mask(acct), Math.round(amount * 100) / 100.0);
-        withdrawals.save(w);
-        return w;
+    private double feeAt(Ticket t, Instant when) {
+        double rate = t.getAppliedRate() >= 0 ? t.getAppliedRate() : rates.getRate(t.getVehicle().getType());
+        return pricing.calculateAtRate(Duration.between(t.getEntryTime(), when), rate);
     }
 
-    public synchronized Ticket forceExit(String plateRaw) { return exitVehicle(plateRaw, PaymentMethod.CASH, ""); }
-
-    public synchronized void setSpotBlocked(String spotId, boolean blocked) {
-        ParkingSpot s = spotIndex.get(spotId);
-        if (s == null) throw new ParkingException("Spot not found", 404);
-        if (blocked && !s.isFree()) throw new ParkingException("Cannot block an occupied spot", 409);
-        if (blocked) blockedSpots.add(spotId); else blockedSpots.remove(spotId);
+    public synchronized Ticket cashExit(String idOrPlate, double tendered, String staff) {
+        Ticket t = gateLookup(idOrPlate);
+        if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("Vehicle must check in before exit", 409);
+        if (t.isPending()) throw new ParkingException("Reject or verify the pending transfer first", 409);
+        double due = currentFee(t);
+        if (!Double.isFinite(tendered) || tendered < due || tendered > 1_000_000 || (due == 0 && tendered != 0)
+                || Math.rint(tendered * 100) != tendered * 100)
+            throw new ParkingException(due == 0 ? "This exit is free: record PKR 0 received" : "Cash received must cover the current fee (maximum PKR 1,000,000)");
+        Ticket updated = t.copy(); updated.cashExit(Instant.now(), due, tendered, staff); finish(t, updated);
+        return updated;
     }
-    public synchronized boolean isBlocked(String spotId) { return blockedSpots.contains(spotId); }
 
-    public synchronized void setRate(VehicleType vt, double rate) { rateTable.setRate(vt, rate); }
-    public RateTable getRateTable() { return rateTable; }
-
-    // ---------- Queries ----------
-    public synchronized double previewFee(String plateRaw) {
-        Ticket t = activeByPlate.get(Vehicle.normalizePlate(plateRaw));
-        if (t == null) throw new ParkingException("No active ticket", 404);
-        return pricing.calculate(t.getVehicle(), Duration.between(t.getEntryTime(), Instant.now()));
+    public synchronized Ticket submitTransfer(String id, String plate, PaymentMethod method, String reference, String senderLastFour) {
+        Ticket t = requireActive(id, plate);
+        if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("Check in before paying", 409);
+        if (t.isPending()) throw new ParkingException("This booking already has a transfer awaiting verification", 409);
+        if (method == PaymentMethod.CASH || !paymentConfig.enabled(method)) throw new ParkingException("This digital payment destination is not available", 409);
+        String ref = reference == null ? "" : reference.trim().toUpperCase();
+        if (!ref.matches("[A-Z0-9_\\-]{6,40}")) throw new ParkingException("Enter the transfer reference (6–40 letters/numbers)");
+        String lastFour = senderLastFour == null ? "" : senderLastFour.trim();
+        if (!lastFour.isEmpty() && !lastFour.matches("\\d{4}")) throw new ParkingException("Sender account last four must be four digits");
+        Instant submittedAt = Instant.now();
+        double fee = feeAt(t, submittedAt);
+        if (fee <= 0) throw new ParkingException("Nothing to pay yet. Please use the gate for a free exit", 409);
+        for (Ticket existing : repo.findAll()) {
+            boolean stillUsed = method == existing.getPaymentMethod()
+                    && (ref.equalsIgnoreCase(existing.getPendingRef()) || ref.equalsIgnoreCase(existing.getPaymentRef()));
+            boolean alreadyAttempted = existing.getAuditTrail().contains("TRANSFER_SUBMITTED " + method + ":" + ref + " amount=");
+            if (stillUsed || alreadyAttempted)
+                throw new ParkingException("This reference has already been submitted. Contact staff if this is your payment", 409);
+        }
+        Ticket updated = t.copy(); updated.submitTransfer(method, ref, fee, lastFour, submittedAt); repo.save(updated);
+        activeByPlate.put(t.getVehicle().getLicensePlate(), updated);
+        return updated;
     }
-    public synchronized Optional<Ticket> findActive(String plateRaw) {
-        return Optional.ofNullable(activeByPlate.get(Vehicle.normalizePlate(plateRaw)));
+
+    /** An administrator must check the merchant's actual wallet/bank statement before calling this. */
+    public synchronized Ticket approveTransfer(String id, String staff) {
+        Ticket t = gateLookup(id);
+        if (t.getStatus() != Ticket.Status.PARKED || !t.isPending()) throw new ParkingException("No pending transfer to verify", 409);
+        if (t.getPendingAt() == null || Math.abs(feeAt(t, t.getPendingAt()) - t.getPendingFee()) > 0.001)
+            throw new ParkingException("The submitted transfer amount does not match the fee at the billing cutoff", 409);
+        Ticket updated = t.copy(); updated.approveTransfer(Instant.now(), staff); finish(t, updated);
+        return updated;
+    }
+
+    public synchronized Ticket rejectTransfer(String id, String reason) {
+        Ticket t = gateLookup(id);
+        if (t.getStatus() != Ticket.Status.PARKED || !t.isPending()) throw new ParkingException("No pending transfer", 409);
+        String note = reason == null ? "" : reason.trim();
+        if (note.length() < 4 || note.length() > 120) throw new ParkingException("Explain the rejection in 4–120 characters");
+        Ticket updated = t.copy(); updated.rejectTransfer(note); repo.save(updated);
+        activeByPlate.put(t.getVehicle().getLicensePlate(), updated);
+        return updated;
+    }
+
+    public synchronized Ticket waiveExit(String idOrPlate, String reason, String staff) {
+        Ticket t = gateLookup(idOrPlate);
+        if (t.getStatus() != Ticket.Status.PARKED || t.isPending()) throw new ParkingException("Resolve check-in / pending transfer first", 409);
+        String note = reason == null ? "" : reason.trim();
+        if (note.length() < 5 || note.length() > 120) throw new ParkingException("Enter an audit reason (5–120 characters)");
+        Ticket updated = t.copy(); updated.waive(Instant.now(), note, staff); finish(t, updated);
+        return updated;
+    }
+
+    private void finish(Ticket old, Ticket updated) {
+        repo.save(updated);
+        activeByPlate.remove(old.getVehicle().getLicensePlate());
+        spots.get(old.getSpotId()).release();
+    }
+
+    public synchronized void setSpotBlocked(String id, boolean blocked) {
+        ParkingSpot spot = spots.get(id);
+        if (spot == null) throw new ParkingException("Spot not found", 404);
+        if (blocked && !spot.isFree()) throw new ParkingException("Cannot block a booked or occupied spot", 409);
+        settings.put("blocked." + id, String.valueOf(blocked));
+        if (blocked) blockedSpots.add(id); else blockedSpots.remove(id);
+    }
+    public synchronized boolean isBlocked(String id) { return blockedSpots.contains(id); }
+    public synchronized void setRate(VehicleType type, double rate) { rates.setRate(type, rate); }
+    public RateTable getRateTable() { return rates; }
+    public PaymentConfig getPaymentConfig() { return paymentConfig; }
+    public String getName() { return name; }
+
+    public synchronized Collection<ParkingSpot> getSpots() { expireReservations(); return new ArrayList<>(spots.values()); }
+    public synchronized List<Ticket> getActiveTickets() {
+        expireReservations();
+        return activeByPlate.values().stream().sorted(Comparator.comparing(Ticket::getCreatedAt).reversed()).collect(Collectors.toList());
+    }
+    public synchronized List<Ticket> getHistory() {
+        expireReservations();
+        return repo.findAll().stream().filter(t -> !t.isActive())
+                .sorted(Comparator.comparing(Ticket::getCreatedAt).reversed()).collect(Collectors.toList());
     }
     public synchronized Optional<Ticket> findTicket(String id) {
         if (id == null) return Optional.empty();
-        String x = id.trim().toUpperCase();
-        return repo.findAll().stream().filter(t -> t.getId().equals(x)).findFirst();
+        String q = id.trim().toUpperCase();
+        return repo.findAll().stream().filter(t -> t.getId().equals(q)).findFirst();
     }
-
-    public String getName() { return name; }
-    public List<ParkingFloor> getFloors() { return Collections.unmodifiableList(floors); }
-
-    public synchronized List<Ticket> getActiveTickets() {
-        return activeByPlate.values().stream().sorted(Comparator.comparing(Ticket::getEntryTime).reversed()).collect(Collectors.toList());
+    public synchronized Optional<Ticket> ticketForSpot(String id) {
+        expireReservations();
+        return activeByPlate.values().stream().filter(t -> t.getSpotId().equals(id)).findFirst();
     }
-    public synchronized List<Ticket> getHistory(int limit) {
-        return repo.findAll().stream().filter(t -> !t.isActive())
-                .sorted(Comparator.comparing(Ticket::getExitTime).reversed()).limit(limit).collect(Collectors.toList());
-    }
-    public synchronized List<Withdrawal> getWithdrawals() {
-        List<Withdrawal> l = withdrawals.findAll(); Collections.reverse(l); return l;
-    }
-
-    public synchronized double totalRevenue() {
-        return repo.findAll().stream().filter(t -> !t.isActive()).mapToDouble(Ticket::getFee).sum();
-    }
-    public synchronized double availableBalance() { return Math.max(0, totalRevenue() - withdrawals.total()); }
 
     public synchronized Map<String, Object> getStats() {
-        int total = spotIndex.size();
-        long free = spotIndex.values().stream().filter(s -> s.isFree() && !blockedSpots.contains(s.getId())).count();
+        expireReservations();
         List<Ticket> all = repo.findAll();
-        Instant dayAgo = Instant.now().minus(Duration.ofDays(1));
-        double revenue = totalRevenue();
-        double revenue24 = all.stream().filter(t -> !t.isActive() && t.getExitTime().isAfter(dayAgo)).mapToDouble(Ticket::getFee).sum();
-
-        Map<String, Long> byType = new LinkedHashMap<>();
-        for (VehicleType vt : VehicleType.values()) byType.put(vt.name(), 0L);
-        activeByPlate.values().forEach(t -> byType.merge(t.getVehicle().getType().name(), 1L, Long::sum));
-
+        Map<String, Object> zones = new LinkedHashMap<>();
+        int free = 0, reserved = 0, occupied = 0;
+        for (VehicleType type : VehicleType.values()) {
+            int zFree = 0, zReserved = 0, zOccupied = 0, zBlocked = 0;
+            for (ParkingSpot s : spots.values()) {
+                if (s.getZone() != type) continue;
+                if (blockedSpots.contains(s.getId())) zBlocked++;
+                else if (s.isFree()) zFree++;
+                else {
+                    Ticket t = activeByPlate.get(s.getVehicle().getLicensePlate());
+                    if (t != null && t.getStatus() == Ticket.Status.RESERVED) zReserved++; else zOccupied++;
+                }
+            }
+            free += zFree; reserved += zReserved; occupied += zOccupied;
+            zones.put(type.name(), Map.of("total", CAPACITY.get(type), "free", zFree, "reserved", zReserved, "occupied", zOccupied, "blocked", zBlocked));
+        }
         Map<String, Double> byMethod = new LinkedHashMap<>();
-        for (PaymentMethod pm : PaymentMethod.values()) byMethod.put(pm.name(), 0.0);
-        all.stream().filter(t -> !t.isActive() && t.getPaymentMethod() != null)
-                .forEach(t -> byMethod.merge(t.getPaymentMethod().name(), t.getFee(), Double::sum));
-
+        for (PaymentMethod method : PaymentMethod.values()) byMethod.put(method.name(), 0.0);
+        double total = 0, day = 0;
+        Instant ago = Instant.now().minus(Duration.ofDays(1));
+        for (Ticket t : all) {
+            if (t.getStatus() == Ticket.Status.CLOSED && t.getPaymentMethod() != null) {
+                total += t.getFee();
+                if (t.getExitTime().isAfter(ago)) day += t.getFee();
+                byMethod.merge(t.getPaymentMethod().name(), t.getFee(), Double::sum);
+            }
+        }
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("name", name);
-        m.put("totalSpots", total);
-        m.put("freeSpots", free);
-        m.put("blockedSpots", blockedSpots.size());
-        m.put("occupiedSpots", total - free - blockedSpots.size());
-        m.put("occupancyPercent", total == 0 ? 0 : Math.round((total - free - blockedSpots.size()) * 1000.0 / total) / 10.0);
-        m.put("totalRevenue", revenue);
-        m.put("revenue24h", revenue24);
-        m.put("withdrawn", withdrawals.total());
-        m.put("availableBalance", availableBalance());
-        m.put("vehiclesLast24h", all.stream().filter(t -> t.getEntryTime().isAfter(dayAgo)).count());
+        m.put("name", name); m.put("totalSpots", spots.size()); m.put("freeSpots", free);
+        m.put("reservedSpots", reserved); m.put("occupiedSpots", occupied); m.put("blockedSpots", blockedSpots.size());
+        m.put("occupancyPercent", Math.round((occupied + reserved) * 1000.0 / spots.size()) / 10.0);
+        m.put("zones", zones); m.put("totalRevenue", Math.round(total * 100) / 100.0);
+        m.put("revenue24h", Math.round(day * 100) / 100.0); m.put("revenueByMethod", byMethod);
+        m.put("pendingPayments", activeByPlate.values().stream().filter(Ticket::isPending).count());
         m.put("totalTickets", all.size());
-        m.put("activeByType", byType);
-        m.put("revenueByMethod", byMethod);
+        m.put("freeExits", all.stream().filter(t -> t.getStatus() == Ticket.Status.CLOSED && t.getPaymentMethod() == null).count());
         return m;
+    }
+
+    private static String val(Object o) { return o == null ? "" : String.valueOf(o); }
+    /** HMAC payloads are phase-specific: a printed reservation / entry pass stays valid after exit. */
+    public String receiptPayload(Ticket t, String phase) {
+        String common = String.join("|", "ORBIT-v1", phase, t.getId(), t.getVehicle().getLicensePlate(),
+                t.getVehicle().getOwnerName(), t.getVehicle().getType().name(), t.getSpotId(),
+                t.getChannel().name(), val(t.getCreatedAt()));
+        switch (phase) {
+            case "RESERVATION":
+                if (t.getChannel() != Ticket.Channel.ONLINE) throw new ParkingException("This is not an online reservation");
+                return common + "|" + val(t.getExpiresAt());
+            case "ENTRY":
+                if (t.getEntryTime() == null) throw new ParkingException("Vehicle has not checked in");
+                return common + "|" + val(t.getEntryTime()) + "|" + t.getAppliedRate();
+            case "PAYMENT":
+                if (t.getStatus() != Ticket.Status.CLOSED) throw new ParkingException("No payment receipt yet", 409);
+                return common + "|" + val(t.getEntryTime()) + "|" + val(t.getExitTime()) + "|" + t.getAppliedRate()
+                        + "|" + t.getFee() + "|" + val(t.getPaymentMethod()) + "|" + t.getPaymentRef()
+                        + "|" + t.getPaymentAccount() + "|" + t.getCollectedBy() + "|" + t.getCashTendered() + "|" + t.getNote()
+                        // Old cash/digital receipts without a cutoff retain their original signature.
+                        + (t.getPendingAt() == null ? "" : "|" + t.getPendingAt());
+            default: throw new ParkingException("Unknown receipt type");
+        }
+    }
+    public String sign(Ticket t, String phase) { return crypto.hmac(receiptPayload(t, phase)); }
+    public boolean validSignature(Ticket t, String phase, String signature) {
+        return crypto.verify(receiptPayload(t, phase), signature);
     }
 }

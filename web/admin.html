@@ -1,128 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-theme="light">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#2563eb">
-<title>Admin — Five Star Parking</title>
-<link rel="icon" href="img/logo.svg">
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-<header class="topbar">
-  <a class="brand" href="/">
-    <img src="img/logo.svg" alt="logo">
-    <div><h1>Five Star Parking</h1><span>Admin Control Panel</span></div>
-  </a>
-  <div class="topbar-right">
-    <nav class="nav"><a href="/">← Public Site</a></nav>
-    <span class="clock" id="clock"></span>
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><span class="sun">☀️</span><span class="moon">🌙</span></button>
-    <button class="btn ghost small hidden" id="logoutBtn">Logout</button>
-  </div>
-</header>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#171717"><title>Control Room — Orbit Park</title><link rel="icon" href="img/logo.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"></head>
+<body class="staff-page admin-page">
+  <div class="announcement"><div class="shell announcement-inner"><span><i class="live-dot"></i> ORBIT PARK / CONTROL ROOM</span><span id="clock"></span></div></div>
+  <header class="topbar"><div class="shell nav-shell"><a class="brand" href="/"><img src="img/logo.svg" alt="" width="44" height="44"><span><b>Orbit<span class="brand-accent">.</span>Park</b><small>ADMIN CONTROL ROOM</small></span></a><nav class="nav"><a href="/">← Public booking</a><a href="/gate">Gate desk ↗</a></nav><div class="nav-actions"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch light / dark theme">◐</button><button id="logoutBtn" class="btn btn-plain hidden" type="button">Sign out</button></div></div></header>
 
-<!-- LOGIN -->
-<div class="login-wrap" id="loginView">
-  <div class="login-box">
-    <div class="lock">🔐</div>
-    <h2>Admin Login</h2>
-    <p class="muted small">Authorized personnel only. All actions are logged.</p>
-    <form id="loginForm" autocomplete="off">
-      <label>Username<input id="lUser" required maxlength="40" autocomplete="username"></label>
-      <label>Password<input id="lPass" type="password" required maxlength="80" autocomplete="current-password"></label>
-      <button class="btn primary" type="submit">Sign In</button>
-    </form>
-  </div>
-</div>
+  <section id="adminLogin" class="auth-layout shell"><div class="auth-intro"><span class="eyebrow light">RESTRICTED ACCESS</span><h1>The full view.<br><em>Full control.</em></h1><p>Track every booking, bay, cash receipt, verified transfer and rate — all from one secure place.</p><div class="auth-mark">04 <span>independent parking zones</span></div></div><div class="auth-card"><div class="panel-icon">A</div><h2>Admin sign in</h2><p class="muted">Only managers can verify digital payments or edit accounts and rates.</p><form id="adminLoginForm"><label for="adminUser">Username</label><input id="adminUser" required autocomplete="username" maxlength="40" placeholder="Admin username"><label for="adminPass">Password</label><input id="adminPass" required type="password" autocomplete="current-password" maxlength="80" placeholder="Your password"><button class="btn btn-red btn-wide" type="submit">Enter control room →</button></form></div></section>
 
-<!-- DASHBOARD -->
-<main class="container hidden" id="dash">
-  <section class="admin-grid">
-    <div class="balance">
-      <span class="label">Available Balance</span>
-      <strong id="bAvail">–</strong>
-      <div class="sub"><span>Total collected: <b id="bTotal">–</b></span><span>Withdrawn: <b id="bWd">–</b></span><span>Last 24h: <b id="b24">–</b></span></div>
-    </div>
-    <section class="card tilt" style="margin:0">
-      <h2><span class="ic">📈</span>Revenue by Method</h2>
-      <div class="chart" id="chart"></div>
-    </section>
-    <section class="card tilt" style="margin:0">
-      <h2><span class="ic">📊</span>Lot Overview</h2>
-      <div class="kpi-mini">
-        <div><span>Total spots</span><b id="kTotal">–</b></div><div><span>Free</span><b id="kFree">–</b></div>
-        <div><span>Occupied</span><b id="kOcc">–</b></div><div><span>Blocked</span><b id="kBlk">–</b></div>
-        <div><span>Tickets (all time)</span><b id="kTickets">–</b></div><div><span>Vehicles 24h</span><b id="k24">–</b></div>
-      </div>
-    </section>
-  </section>
+  <main id="adminDash" class="shell staff-content hidden"><div class="staff-heading"><div><div class="eyebrow"><span class="dash"></span> ORBIT OPERATIONS / ADMIN</div><h1>Control room<span class="red-period">.</span></h1><p>Real-time overview and manager-only actions. Cash and transfers are accounted for separately.</p></div><span class="operator-label">MANAGER ACCESS</span></div>
+    <div class="admin-kpis"><div class="mini-kpi dark-kpi"><span>COLLECTED REVENUE</span><strong id="aRevenue">—</strong><small id="aRevenue24">Last 24h —</small></div><div class="mini-kpi"><span>AVAILABLE BAYS</span><strong id="aFree">—</strong><small>Of 90 shaded spaces</small></div><div class="mini-kpi"><span>RESERVED / ON SITE</span><strong id="aBusy">—</strong><small>Held / checked in</small></div><div class="mini-kpi"><span>AWAITING VERIFICATION</span><strong id="aPending">—</strong><small>Transfers not yet counted as paid</small></div></div>
 
-  <div class="grid" style="margin-top:22px">
-    <!-- WITHDRAW -->
-    <section class="card tilt">
-      <h2><span class="ic">🏧</span>Withdraw Funds</h2>
-      <form id="wdForm" autocomplete="off">
-        <label>Payout Method</label>
-        <div class="methods" id="wdMethods"></div>
-        <label><span id="wdAcctLabel">Mobile Number</span><input id="wdAccount" required maxlength="34" placeholder="03XXXXXXXXX"></label>
-        <label>Amount (PKR)<input id="wdAmount" type="number" min="1" step="0.01" required placeholder="0.00"></label>
-        <div class="row"><button type="button" class="btn ghost" id="wdMax">Max</button><button class="btn success" type="submit">Withdraw</button></div>
-      </form>
-    </section>
+    <div id="methodTotals" class="collection-breakdown" aria-label="Collected revenue by method"></div>
 
-    <!-- RATES -->
-    <section class="card tilt">
-      <h2><span class="ic">💰</span>Manage Rates</h2>
-      <table class="rates"><tbody id="rateRows"></tbody></table>
-      <p class="muted small">Changes apply instantly to all new exits.</p>
-    </section>
+    <section class="section admin-pending" id="pending"><div class="section-heading"><div><div class="eyebrow"><span class="dash"></span> ACTION REQUIRED</div><h2>Verify transfers <span>before exit.</span></h2><p>Open your <b>real merchant wallet/bank statement</b> separately. Match method, reference and exact amount before approval. A submitted reference alone is not payment.</p></div><button type="button" class="btn btn-plain" id="pendingRefresh">↻ Refresh queue</button></div><div id="pendingList" class="pending-list" aria-live="polite"></div></section>
 
-    <!-- FORCE EXIT -->
-    <section class="card tilt">
-      <h2><span class="ic">🚨</span>Manual Controls</h2>
-      <form id="feForm" autocomplete="off">
-        <label>Force Exit (plate) <span class="muted">— records as cash</span><input id="fePlate" maxlength="15" required placeholder="e.g. LEA-4521"></label>
-        <button class="btn danger" type="submit" style="width:100%">Force Exit Vehicle</button>
-      </form>
-      <p class="muted small" style="margin-top:14px">💡 Click any <b>free</b> spot on the map below to block/unblock it for maintenance.</p>
-    </section>
-  </div>
+    <section class="section"><div class="section-heading"><div><div class="eyebrow"><span class="dash"></span> LIVE CAPACITY</div><h2>Every zone <span>accounted for.</span></h2><p>Click an empty or blocked bay to change its maintenance status. Booked and occupied bays cannot be blocked.</p></div><div class="legend"><span><i class="legend-dot free"></i> Free</span><span><i class="legend-dot reserved"></i> Reserved</span><span><i class="legend-dot occupied"></i> Occupied</span><span><i class="legend-dot blocked"></i> Blocked</span></div></div><div id="adminZones" class="map-sections admin-map"></div></section>
 
-  <section class="card">
-    <div class="card-head"><h2 style="margin:0"><span class="ic">🗺️</span>Spot Control</h2>
-      <div class="legend"><span><i class="sq free"></i>Free</span><span><i class="sq occupied"></i>Occupied</span><span><i class="sq blocked"></i>Blocked</span></div></div>
-    <div id="floors" class="spot-admin"></div>
-  </section>
+    <section class="section"><div class="section-heading"><div><div class="eyebrow"><span class="dash"></span> BUSINESS SETTINGS</div><h2>Make the lot <span>your own.</span></h2></div></div><div class="admin-settings"><div class="panel"><div class="panel-head"><div class="panel-icon">₨</div><div><h3>Manage hourly rates</h3><p>Rate is locked at online booking or walk-in entry.</p></div></div><div id="adminRateRows" class="rate-editor"></div><p class="muted small">First 15 minutes free · per started hour · max 10 billed hours per 24h.</p></div>
+      <div class="panel"><div class="panel-head"><div class="panel-icon">→</div><div><h3>Merchant payment destinations</h3><p>These account details will be shown to drivers at checkout.</p></div></div><form id="merchantForm" autocomplete="off"><label for="merchantName">Beneficiary / account name</label><input id="merchantName" required maxlength="60" placeholder="Orbit Park"><div class="form-row"><div><label for="merchantEp">easypaisa merchant number</label><input id="merchantEp" inputmode="numeric" pattern="03[0-9]{9}" maxlength="11" placeholder="03XXXXXXXXX"></div><div><label for="merchantJc">JazzCash merchant number</label><input id="merchantJc" inputmode="numeric" pattern="03[0-9]{9}" maxlength="11" placeholder="03XXXXXXXXX"></div></div><div class="form-row"><div><label for="merchantBank">Bank (actual account holder)</label><select id="merchantBank"><option value="HBL">HBL</option><option value="MEEZAN">Meezan Bank</option></select></div><div><label for="merchantIban">Bank IBAN</label><input id="merchantIban" maxlength="34" placeholder="PK followed by your bank's IBAN" autocapitalize="characters"></div></div><p class="form-note">Leave a method empty to turn it off. No card/PIN data is stored. Transfers need manual statement verification; saving a number does <b>not</b> connect an automatic gateway.</p><button class="btn btn-dark btn-wide" type="submit">Save payment destinations →</button></form></div>
+      <div class="panel"><div class="panel-head"><div class="panel-icon">!</div><div><h3>Exceptional release</h3><p>Release a checked-in vehicle without charging — always record the reason.</p></div></div><form id="waiveForm"><label for="waiveQuery">Booking code or plate</label><input id="waiveQuery" required maxlength="16" placeholder="LEA-4521"><label for="waiveReason">Audit reason</label><textarea id="waiveReason" required minlength="5" maxlength="120" rows="3" placeholder="Why was the charge waived?"></textarea><button class="btn btn-plain btn-wide" type="submit">Waive charge & release bay →</button></form><p class="muted small">Not recorded as cash revenue. Pending transfers must be rejected first.</p></div></div></section>
 
-  <section class="card">
-    <div class="tabs">
-      <button class="tab active" data-tab="active">🟢 Active <span class="pill" id="cActive">0</span></button>
-      <button class="tab" data-tab="history">📜 History</button>
-      <button class="tab" data-tab="payments">💳 Payments</button>
-      <button class="tab" data-tab="withdrawals">🏧 Withdrawals</button>
-      <button class="tab" data-tab="vehicles">🚘 Vehicles</button>
-    </div>
-    <div class="row" id="filters" style="margin-bottom:10px">
-      <input id="fSearch" placeholder="🔍 Search plate / owner / ticket / ref" style="margin:0;flex:2;min-width:180px">
-      <select id="fMethod" style="margin:0;flex:1;min-width:130px"><option value="">All methods</option><option>CASH</option><option>EASYPAISA</option><option>JAZZCASH</option><option>BANK</option></select>
-      <select id="fRange" style="margin:0;flex:1;min-width:130px"><option value="">All time</option><option value="1">Today (24h)</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
-      <button class="btn ghost small" id="fCsv" type="button" style="flex:0">⬇ CSV</button>
-    </div>
-    <div class="table-wrap"><table class="data" id="tbl"><thead></thead><tbody></tbody></table></div>
-    <p class="muted small" id="tblSummary"></p>
-  </section>
-</main>
+    <section class="section" id="records"><div class="section-heading"><div><div class="eyebrow"><span class="dash"></span> COMPLETE PAPER TRAIL</div><h2>Bookings, payments <span>& people.</span></h2></div></div><div class="panel records-panel"><div class="tabs" role="tablist" aria-label="Admin records"><button type="button" class="tab active" data-adtab="active" aria-selected="true">Active <span class="pill" id="activeCount">0</span></button><button type="button" class="tab" data-adtab="history" aria-selected="false">All bookings</button><button type="button" class="tab" data-adtab="payments" aria-selected="false">Paid receipts</button><button type="button" class="tab" data-adtab="vehicles" aria-selected="false">Vehicles</button></div><div class="record-filters"><input id="adminSearch" type="search" placeholder="Search plate, booking, owner or reference" aria-label="Search records"><select id="adminMethod" aria-label="Filter payment method"><option value="">All payment methods</option><option value="CASH">Cash</option><option value="EASYPAISA">easypaisa</option><option value="JAZZCASH">JazzCash</option><option value="BANK">Bank</option></select><select id="adminChannel" aria-label="Filter booking source"><option value="">Online & gate</option><option value="ONLINE">Online booking</option><option value="GATE">Gate walk-in</option></select><button type="button" id="adminExport" class="btn btn-plain">↓ Export CSV</button></div><div class="table-wrap"><table class="data-table" id="adminTable"><thead></thead><tbody></tbody></table></div><p id="adminSummary" class="muted small"></p></div></section>
+  </main>
 
-<div class="modal" id="modal" hidden>
-  <div class="modal-box">
-    <h3 id="mTitle">Withdrawal Receipt</h3>
-    <div id="mBody" class="receipt"></div>
-    <div class="row"><button class="btn ghost" id="mClose">Close</button></div>
-  </div>
-</div>
-<div class="toast" id="toast"></div>
-<script src="common.js"></script>
-<script src="admin.js"></script>
-</body>
-</html>
+  <div class="modal" id="detailsModal" hidden role="dialog" aria-modal="true" aria-labelledby="detailsTitle"><div class="modal-box"><div class="modal-header"><div><span class="eyebrow">FULL BOOKING RECORD</span><h3 id="detailsTitle">Ticket details</h3></div><button class="icon-button" id="detailsClose" type="button" aria-label="Close details">×</button></div><div id="detailsContent" class="receipt"></div><p class="muted small">Only completed, verified payments are counted as revenue. Save or print the separate signed receipt using the table's Receipt action.</p></div></div>
+
+  <div class="modal" id="receiptModal" hidden role="dialog" aria-modal="true" aria-labelledby="receiptTitle"><div class="modal-box"><div class="modal-header"><div><span class="eyebrow">ORBIT PARK</span><h3 id="receiptTitle">Receipt</h3></div><button class="icon-button" id="receiptClose" type="button" aria-label="Close">×</button></div><div id="receiptContent" class="receipt"></div><div class="modal-actions"><button id="receiptPng" class="btn btn-red" type="button">↓ Save image</button><button id="receiptPrint" class="btn btn-dark" type="button">Print</button><button id="receiptJson" class="btn btn-plain" type="button">↓ Ticket file</button><button id="receiptHtml" class="btn btn-plain" type="button">↓ HTML</button><button id="receiptShare" class="btn btn-plain" type="button">Share</button></div></div></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="common.js"></script><script src="admin.js"></script>
+</body></html>

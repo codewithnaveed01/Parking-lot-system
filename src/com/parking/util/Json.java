@@ -67,9 +67,11 @@ public final class Json {
             if (i >= n || json.charAt(i) != ':') break;
             i = skipWs(json, i + 1);
             StringBuilder val = new StringBuilder();
-            if (i < n && json.charAt(i) == '"') i = readString(json, i + 1, val);
+            boolean quoted = i < n && json.charAt(i) == '"';
+            if (quoted) i = readString(json, i + 1, val);
             else { int s = i; while (i < n && ",}".indexOf(json.charAt(i)) < 0) i++; val.append(json, s, i); }
-            out.put(key.toString(), val.toString().trim());
+            String parsed = val.toString().trim();
+            out.put(key.toString(), !quoted && parsed.equals("null") ? null : parsed);
             i = skipWs(json, i);
             if (i < n && json.charAt(i) == ',') i++;
         }

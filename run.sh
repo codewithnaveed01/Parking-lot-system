@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Build & run:  ./run.sh [port] [floors]
+# Build & run: ./run.sh [port]  (set ADMIN_PASS and GUARD_PASS before public deployment)
 set -e
 cd "$(dirname "$0")"
 mkdir -p build
-javac -encoding UTF-8 -cp "lib/*" -d build $(find src -name "*.java")
-java -cp "build:lib/*" com.parking.Main "${1:-8080}" "${2:-3}"
+find src -name '*.java' | sort > build/sources.txt
+javac -encoding UTF-8 -cp 'lib/*' -d build @build/sources.txt
+java -cp 'build:lib/*' com.parking.Main "${1:-${PORT:-8080}}"

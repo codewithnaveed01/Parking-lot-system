@@ -24,7 +24,7 @@ public final class Crypto {
                 if (keyFile.getParent() != null) Files.createDirectories(keyFile.getParent());
                 Files.write(keyFile, k);
             }
-        } catch (Exception e) { k = new byte[32]; RNG.nextBytes(k); }
+        } catch (Exception e) { throw new IllegalStateException("Cannot persist receipt signing key; refusing to issue unverifiable receipts", e); }
         this.secret = k;
     }
 

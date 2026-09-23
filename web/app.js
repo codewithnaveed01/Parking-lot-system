@@ -1,134 +1,111 @@
-/* Five Star Parking — public UI */
+/* Public online booking and externally verified transfer journey. */
 (() => {
   'use strict';
-  const { $, el, money, fmt, dur, api, toast, tilt, countTo, renderReceipt, downloadTicket, downloadReceipt, downloadReceiptImage, shareReceiptImage, printReceipt, renderFloors, ICONS, METHOD_ICON } = FSP;
-  let methods = [], selectedMethod = 'CASH', currentTicket = null, lastReceipt = null, lastIsExit = false;
+  const { $, el, money, fmt, zoneIcon, labels, request, toast, handleError, detailCard, renderZoneMap, picker, destination, showReceipt } = Orbit;
+  const zoneOrder = ['CAR', 'MOTORCYCLE', 'VAN', 'TRUCK'];
+  let methods = [], current = null, selected = null;
+  const busy = (button, on) => { button.disabled = on; button.dataset.busy = on ? '1' : '0'; };
 
-  /* ---------- Modal ---------- */
-  const showReceipt = (title, t, isExit) => {
-    lastReceipt = t; lastIsExit = isExit; $('mTitle').textContent = (isExit ? '🧾 ' : '🎫 ') + title;
-    renderReceipt($('mBody'), t, isExit); $('modal').hidden = false;
-  };
-  $('mClose').addEventListener('click', () => { $('modal').hidden = true; });
-  $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) $('modal').hidden = true; });
-  $('mDownload').addEventListener('click', () => lastReceipt && downloadTicket(lastReceipt));
-  $('mReceipt').addEventListener('click', () => { if (lastReceipt) downloadReceiptImage(lastReceipt, lastIsExit).then(() => toast('Receipt image saved')); });
-  $('mShare').addEventListener('click', async () => { if (!lastReceipt) return; const ok = await shareReceiptImage(lastReceipt, lastIsExit); if (!ok) { await downloadReceiptImage(lastReceipt, lastIsExit); toast('Sharing not supported here — image downloaded instead'); } });
-  $('mHtml').addEventListener('click', () => lastReceipt && downloadReceipt(lastReceipt, lastIsExit));
-  $('mPrint').addEventListener('click', () => lastReceipt && printReceipt(lastReceipt, lastIsExit));
-
-  /* ---------- Loaders ---------- */
-  async function loadStats() {
-    const s = await api('/api/stats');
-    countTo($('sTotal'), s.totalSpots); countTo($('sFree'), s.freeSpots); countTo($('sOcc'), s.occupiedSpots);
-    countTo($('sPct'), s.occupancyPercent, '%'); $('sBar').style.width = s.occupancyPercent + '%';
-    const b = s.activeByType || {};
-    $('sMix').textContent = `${b.MOTORCYCLE || 0} / ${b.CAR || 0}`; $('sMix2').textContent = `${b.VAN || 0} / ${b.TRUCK || 0}`;
-    $('lotName').textContent = s.name;
-  }
-  const loadFloors = async () => renderFloors($('floors'), await api('/api/floors'));
-  async function loadActive() {
-    const list = await api('/api/active');
-    $('activeCount').textContent = list.length;
-    const tb = $('activeTable').querySelector('tbody'); tb.textContent = '';
-    if (!list.length) { const tr = el('tr'); const td = el('td', 'empty', 'No vehicles parked right now'); td.colSpan = 4; tr.append(td); tb.append(tr); return; }
-    list.forEach(t => {
-      const tr = el('tr'); const type = el('td'); type.append(el('span', 'badge', `${ICONS[t.vehicleType]} ${t.vehicleType}`));
-      tr.append(el('td', '', t.spotId), type, el('td', '', fmt(t.entryTime)), el('td', '', dur(t.entryTime)));
-      tb.append(tr);
+  const loadOverview = async () => {
+    const [stats, zones] = await Promise.all([request('/api/stats'), request('/api/spots')]);
+    $('sTotal').textContent = stats.totalSpots; $('sFree').textContent = stats.freeSpots;
+    $('sReserved').textContent = stats.reservedSpots; $('sOccupied').textContent = stats.occupiedSpots;
+    renderZoneMap($('zonesMap'), zones);
+    $('zoneCards').replaceChildren();
+    zoneOrder.forEach((type, idx) => {
+      const values = stats.zones[type], card = el('article', 'zone-card');
+      const top = el('div', 'zone-top'), icon = el('span', 'zone-icon'); icon.append(zoneIcon(type));
+      top.append(icon, el('span', 'zone-tag', `${String(idx + 1).padStart(2, '0')} / 04`));
+      card.append(top, el('h3', '', labels[type]), el('p', 'zone-sub', `${type === 'MOTORCYCLE' ? 'Compact shade' : type === 'TRUCK' ? 'Wide loading bays' : type === 'VAN' ? 'Extra room to arrive' : 'Everyday easy access'} · dedicated bays`));
+      const count = el('div', 'zone-number'); count.append(el('strong', '', values.free), el('span', '', `of ${values.total} available`)); card.append(count);
+      const track = el('div', 'zone-progress'); const bar = el('i'); bar.style.width = `${Math.max(0, Math.min(100, values.free / values.total * 100))}%`; track.append(bar); card.append(track);
+      const foot = el('div', 'zone-foot'); foot.append(el('span', '', `${values.reserved} held · ${values.occupied} in use`));
+      const link = el('a', '', 'Book this zone ↗'); link.href = '#booking'; link.addEventListener('click', () => { $('bType').value = type; });
+      foot.append(link); card.append(foot); $('zoneCards').append(card);
     });
-  }
-  async function loadRates() {
-    const rates = await api('/api/rates'); const sel = $('pType'); sel.textContent = '';
-    const tb = $('ratesTable').querySelector('tbody'); tb.textContent = '';
-    rates.forEach(r => {
-      const o = el('option', '', `${ICONS[r.type]} ${r.label}`); o.value = r.type; if (r.type === 'CAR') o.selected = true; sel.append(o);
-      const tr = el('tr'); const c1 = el('td'); c1.append(el('span', 'vi', ICONS[r.type]), document.createTextNode(r.label));
-      tr.append(c1, el('td', '', money(r.rate) + ' / hr')); tb.append(tr);
-    });
-  }
-  async function loadMethods() {
-    methods = await api('/api/methods');
-    const renderPicker = (wrap, interactive) => {
-      wrap.textContent = '';
-      methods.forEach(m => {
-        const d = el('div', 'method' + (interactive && m.id === selectedMethod ? ' active' : '')); d.dataset.m = m.id;
-        d.append(el('span', 'mi', METHOD_ICON[m.id]), document.createTextNode(m.label));
-        if (interactive) d.addEventListener('click', () => { selectedMethod = m.id; renderPicker(wrap, true); updateAccountField(); });
-        wrap.append(d);
-      });
-    };
-    renderPicker($('methods'), true); renderPicker($('methodsShow'), false);
-  }
-  const updateAccountField = () => {
-    const m = methods.find(x => x.id === selectedMethod); const needs = m && m.needsAccount && currentTicket && currentTicket.currentFee > 0;
-    $('acctWrap').classList.toggle('hidden', !needs);
-    if (needs) { $('acctLabel').textContent = selectedMethod === 'BANK' ? 'Bank Account / IBAN' : `${m.label} Mobile Number`; $('eAccount').placeholder = selectedMethod === 'BANK' ? 'PK36SCBL0000001123456702' : '03XXXXXXXXX'; $('eAccount').required = true; }
-    else $('eAccount').required = false;
   };
-  const refresh = () => Promise.all([loadStats(), loadFloors(), loadActive()]).catch(e => toast(e.message, 'err'));
-
-  /* ---------- Entry ---------- */
-  $('parkForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      const t = await api('/api/park', { method: 'POST', body: JSON.stringify({ plate: $('pPlate').value, owner: $('pOwner').value, type: $('pType').value }) });
-      toast(`✅ Parked at spot ${t.spotId}`); $('parkForm').reset(); $('pType').value = 'CAR';
-      showReceipt('Entry Ticket — please download', t, false); refresh();
-    } catch (err) { toast(err.message, 'err'); }
-  });
-
-  /* ---------- Exit flow ---------- */
-  const setStep = (n) => [1, 2, 3].forEach(i => { const s = $('st' + i); s.classList.toggle('on', i === n); s.classList.toggle('done', i < n); });
-  const showFee = (t) => {
-    currentTicket = t; setStep(2);
-    const fp = $('feePreview'); fp.textContent = ''; fp.classList.remove('hidden');
-    fp.append(el('div', '', `${ICONS[t.vehicleType]} ${t.plate} · Spot ${t.spotId} · Parked ${dur(t.entryTime)}`));
-    const s = el('div'); s.append('Amount due: ', el('strong', '', money(t.currentFee))); fp.append(s);
-    if (t.currentFee === 0) fp.append(el('div', 'muted small', 'Within 15‑minute grace period — no charge.'));
-    $('payForm').classList.remove('hidden'); $('ePlate').value = t.plate; updateAccountField(); setStep(3);
+  const loadRates = async () => {
+    const rates = await request('/api/rates'); $('ratesList').replaceChildren();
+    rates.forEach(rate => { const row = el('div', 'rate-line'); row.append(el('span', '', rate.label), el('strong', '', `${money(rate.rate)} / hr`)); $('ratesList').append(row); });
   };
-  $('feeBtn').addEventListener('click', async () => {
-    const plate = $('ePlate').value.trim(), id = $('eTicket').value.trim();
-    if (!plate) return toast('Enter your license plate', 'err');
-    try {
-      if (id) { const tk = await api(`/api/ticket?id=${encodeURIComponent(id)}&plate=${encodeURIComponent(plate)}`); if (!tk.active) return toast('This ticket is already paid/closed', 'err'); }
-      showFee(await api('/api/fee?plate=' + encodeURIComponent(plate)));
-    } catch (err) { toast(err.message, 'err'); }
-  });
-  $('eFile').addEventListener('change', async (e) => {
-    const f = e.target.files[0]; const out = $('verifyResult'); out.textContent = ''; if (!f) return; e.target.value = '';
-    if (f.size > 20000) return toast('File too large', 'err');
-    try {
-      const text = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('Could not read file')); r.readAsText(f); });
-      let data; try { data = JSON.parse(text); } catch (_) { throw new Error('Invalid ticket file'); }
-      if (!data || typeof data !== 'object') throw new Error('Invalid ticket file');
-      const r = await api('/api/verify', { method: 'POST', body: JSON.stringify({ id: String(data.id || ''), plate: String(data.plate || ''), signature: String(data.signature || '') }) });
-      const badge = el('span', 'verified' + (r.valid ? '' : ' invalid'), r.valid ? '✔ Signature verified — genuine receipt' : '✖ Invalid signature — receipt was modified');
-      out.append(badge);
-      if (!r.valid) return;
-      if (!r.active) { out.append(el('p', 'muted small', 'This ticket has already been paid. You can re-download it.')); const b = el('button', 'btn ghost small', 'View receipt'); b.type = 'button'; b.addEventListener('click', () => showReceipt('Payment Receipt', r.ticket, true)); out.append(b); return; }
-      showFee(await api('/api/fee?plate=' + encodeURIComponent(r.ticket.plate)));
-    } catch (err) { toast(err.message, 'err'); }
-  });
-  $('payForm').addEventListener('submit', async (e) => {
-    e.preventDefault(); if (!currentTicket) return;
-    const m = methods.find(x => x.id === selectedMethod);
-    if (m && m.needsAccount && currentTicket.currentFee > 0 && !$('eAccount').value.trim()) return toast(`Enter your ${m.label} account number`, 'err');
-    try {
-      const t = await api('/api/exit', { method: 'POST', body: JSON.stringify({ plate: currentTicket.plate, method: selectedMethod, account: $('eAccount').value }) });
-      toast(`💸 Paid ${money(t.fee)} via ${t.paymentMethod}`);
-      currentTicket = null; $('payForm').classList.add('hidden'); $('feePreview').classList.add('hidden'); $('ePlate').value = ''; $('eTicket').value = ''; $('eAccount').value = ''; $('eFile').value = ''; $('verifyResult').textContent = ''; setStep(1);
-      showReceipt('Payment Receipt', t, true); refresh();
-    } catch (err) { toast(err.message, 'err'); }
-  });
-  document.querySelectorAll('[data-xtab]').forEach(b => b.addEventListener('click', () => {
-    document.querySelectorAll('[data-xtab]').forEach(x => x.classList.remove('active')); b.classList.add('active');
-    $('xManual').classList.toggle('hidden', b.dataset.xtab !== 'manual'); $('xUpload').classList.toggle('hidden', b.dataset.xtab !== 'upload');
-  }));
+  const loadMethods = async () => { methods = await request('/api/methods'); };
 
-  /* ---------- Init ---------- */
-  tilt();
-  Promise.all([loadRates(), loadMethods()]).then(refresh).catch(e => toast(e.message, 'err'));
-  setInterval(refresh, 10000);
+  function renderBooking(t) {
+    current = t; selected = null;
+    $('bookingResult').classList.remove('hidden'); $('bookingResult').replaceChildren(detailCard(t));
+    const card = $('bookingResult').firstChild, actions = el('div', 'ticket-actions');
+    if (t.signature) { const receipt = el('button', 'btn btn-plain', t.receiptType === 'RESERVATION' ? 'View booking pass ↗' : t.receiptType === 'PAYMENT' ? 'View payment receipt ↗' : 'View entry ticket ↗'); receipt.type = 'button'; receipt.addEventListener('click', () => showReceipt(t)); actions.append(receipt); }
+    if (t.status === 'RESERVED') {
+      const cancel = el('button', 'btn btn-plain danger-text', 'Cancel reservation'); cancel.type = 'button';
+      cancel.addEventListener('click', async () => { if (!confirm(`Cancel reservation ${t.id}? Your bay will return to availability.`)) return;
+        try { renderBooking(await request('/api/booking/cancel', { id: t.id, plate: t.plate })); toast('Reservation cancelled; the bay is free again.'); await loadOverview(); } catch (error) { handleError(error); } });
+      actions.append(cancel);
+      card.append(el('div', 'notice-box', 'Bring this booking code to the gate before the arrival deadline. The guard will check in your vehicle and start your parking time.'));
+    }
+    if (t.status === 'PARKED') {
+      if (t.paymentStatus === 'PENDING_VERIFICATION') {
+        card.append(el('div', 'warning-box', `Reference ${t.pendingRef} · ${money(t.pendingFee)} submitted via ${t.paymentMethod}. Your parking meter is paused while the admin verifies the real transfer. This is NOT paid yet, and the bay remains occupied until verified.`));
+        const refresh = el('button', 'btn btn-dark', '↻ Check verification status'); refresh.type = 'button'; refresh.addEventListener('click', () => lookup(true)); actions.append(refresh);
+      } else if (t.currentFee <= 0) {
+        card.append(el('div', 'notice-box', 'Within the free 15-minute period. To leave now, ask the gate guard to record a zero-charge exit. Digital payment is not needed.'));
+      } else {
+        const checkout = el('div', 'payment-checkout'); checkout.append(el('h4', '', `Pay ${money(t.currentFee)} for your stay`), el('p', 'muted', 'Open your wallet/bank app, send the exact amount shown, then submit its real transaction reference. An admin checks the merchant statement before releasing your bay.'));
+        const enabled = methods.filter(m => m.id !== 'CASH' && m.enabled);
+        if (!enabled.length) checkout.append(el('div', 'notice-box', 'Online transfer is not configured yet. Please pay cash to the guard at the gate and collect your receipt.'));
+        else {
+          const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'hidden');
+          form.append(el('label', '', 'Transaction / transfer reference'));
+          const ref = el('input'); ref.required = true; ref.maxLength = 40; ref.placeholder = 'From your wallet or bank app'; form.append(ref);
+          form.append(el('label', '', 'Sender account last 4 digits (optional)'));
+          const last = el('input'); last.maxLength = 4; last.inputMode = 'numeric'; last.placeholder = '1234'; last.pattern = '[0-9]{4}'; form.append(last);
+          const submit = el('button', 'btn btn-dark btn-wide', 'Submit transfer for verification →'); submit.type = 'submit'; form.append(submit);
+          const choose = method => { selected = method; picker(choices, methods, choose, selected.id); destination(dest, method, t.currentFee); form.classList.remove('hidden'); };
+          picker(choices, methods, choose, selected);
+          form.addEventListener('submit', async event => { event.preventDefault(); if (!selected) return toast('Choose a transfer method first.', true);
+            busy(submit, true);
+            try { const next = await request('/api/payments/submit', { id: t.id, plate: t.plate, method: selected.id, reference: ref.value, lastFour: last.value }); renderBooking(next); toast('Reference submitted. Awaiting real transfer verification — this is NOT a payment receipt yet.'); }
+            catch (error) { handleError(error); } finally { busy(submit, false); }
+          });
+          checkout.append(choices, dest, form);
+        }
+        card.append(checkout);
+      }
+    }
+    if (actions.childNodes.length) card.append(actions);
+  }
+  const lookup = async quiet => {
+    const id = $('lookupId').value.trim(), plate = $('lookupPlate').value.trim();
+    if (!id || !plate) { if (!quiet) toast('Enter booking code and license plate.', true); return; }
+    try { const t = await request(`/api/booking?id=${encodeURIComponent(id)}&plate=${encodeURIComponent(plate)}`); renderBooking(t); if (!quiet) toast('Booking found.'); }
+    catch (error) { if (!quiet) handleError(error); else if (error.status === 404) { current = null; $('bookingResult').classList.add('hidden'); } }
+  };
+
+  $('bookingForm').addEventListener('submit', async event => {
+    event.preventDefault(); const button = $('bookBtn'); busy(button, true);
+    try { const t = await request('/api/book', { type: $('bType').value, plate: $('bPlate').value, owner: $('bOwner').value });
+      $('lookupId').value = t.id; $('lookupPlate').value = t.plate;
+      renderBooking(t); showReceipt(t); $('bookingForm').reset(); toast(`Bay ${t.spotId} is yours for 30 minutes. Save your booking pass.`);
+      await loadOverview();
+    } catch (error) { handleError(error); } finally { busy(button, false); }
+  });
+  $('lookupForm').addEventListener('submit', event => { event.preventDefault(); lookup(false); });
+  $('verifyFile').addEventListener('change', async event => {
+    const file = event.target.files[0], out = $('verifyResult'); out.replaceChildren(); event.target.value = '';
+    if (!file) return;
+    if (file.size > 20000) return toast('Ticket file is too large.', true);
+    try { const saved = JSON.parse(await file.text());
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.system !== 'Orbit Park') throw new Error('This is not an Orbit Park ticket JSON file.');
+      const result = await request('/api/verify', saved);
+      if (!result.valid) { out.append(el('strong', '', '✕ Ticket information or signature does not match our records.')); toast('Ticket could not be verified.', true); return; }
+      out.append(el('strong', '', `✓ Genuine ${saved.receiptType.toLowerCase()} ticket · ${saved.id} · ${result.ticket.status.toLowerCase()} now. `));
+      if (result.ticket.signature) { const view = el('button', 'btn btn-outline-white', 'View current pass'); view.type = 'button'; view.addEventListener('click', () => showReceipt(result.ticket)); out.append(view); }
+      $('lookupId').value = result.ticket.id; $('lookupPlate').value = result.ticket.plate; renderBooking(result.ticket);
+      toast('Ticket signature verified against Orbit Park records.');
+    } catch (error) { handleError(error); }
+  });
+  Promise.all([loadOverview(), loadRates(), loadMethods()]).catch(handleError);
+  setInterval(() => {
+    loadOverview().catch(() => {});
+    if (current && (current.paymentStatus === 'PENDING_VERIFICATION' || current.status === 'RESERVED')) lookup(true);
+  }, 15000);
 })();

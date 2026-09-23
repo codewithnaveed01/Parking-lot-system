@@ -47,10 +47,22 @@ public class Database {
             " payment_method VARCHAR(16), payment_account VARCHAR(40), payment_ref VARCHAR(40), applied_rate NUMERIC(12,2))",
             "CREATE INDEX IF NOT EXISTS idx_tickets_plate_active ON tickets(plate) WHERE exit_time IS NULL",
             "CREATE INDEX IF NOT EXISTS idx_tickets_exit ON tickets(exit_time)",
-            "CREATE TABLE IF NOT EXISTS withdrawals (" +
-            " id VARCHAR(16) PRIMARY KEY, method VARCHAR(16) NOT NULL, account VARCHAR(40) NOT NULL, amount NUMERIC(12,2) NOT NULL," +
-            " time TIMESTAMPTZ NOT NULL, reference VARCHAR(40) NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL)",
+            // Single-level reservations have no entry timestamp until the gate checks the vehicle in.
+            "ALTER TABLE tickets ALTER COLUMN entry_time DROP NOT NULL",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_status VARCHAR(16)",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS channel VARCHAR(16)",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending_ref VARCHAR(40)",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending_fee NUMERIC(12,2) DEFAULT 0",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending_at TIMESTAMPTZ",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS collected_by VARCHAR(80)",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS cash_tendered NUMERIC(12,2) DEFAULT 0",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS note TEXT",
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS audit_trail TEXT",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_orbit_active_plate ON tickets(plate) WHERE exit_time IS NULL",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_orbit_active_spot ON tickets(spot_id) WHERE exit_time IS NULL"
         };
         try (Connection c = open(); Statement st = c.createStatement()) {
             for (String sql : ddl) st.execute(sql);
