@@ -1,6 +1,6 @@
 package com.parking.model;
 
-/** Supported payment / withdrawal channels. */
+/** Ways an attended cash exit or an externally verified transfer can be collected. */
 public enum PaymentMethod {
     CASH("Cash", false),
     EASYPAISA("EasyPaisa", true),
@@ -15,7 +15,7 @@ public enum PaymentMethod {
     public boolean needsAccount() { return needsAccount; }
 
     public static PaymentMethod fromString(String s) {
-        if (s == null || s.trim().isEmpty()) return CASH;
+        if (s == null || s.trim().isEmpty()) throw new IllegalArgumentException("Payment method is required");
         try { return valueOf(s.trim().toUpperCase()); }
         catch (IllegalArgumentException e) { throw new IllegalArgumentException("Unknown payment method: " + s); }
     }

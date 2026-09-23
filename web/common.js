@@ -1,199 +1,194 @@
-/* Shared helpers: API, theme, toast, 3D tilt, receipt rendering. XSS-safe (textContent only). */
-window.FSP = (() => {
+/* Orbit Park — shared, XSS-safe UI, network and signed receipt helpers. */
+window.Orbit = (() => {
   'use strict';
-  const $ = (id) => document.getElementById(id);
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; };
-  const money = (n) => 'PKR ' + Number(n || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 });
-  const fmt = (iso) => iso && !isNaN(Date.parse(iso)) ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
-  const dur = (iso) => { const ts = Date.parse(iso); if (!iso || isNaN(ts)) return '—'; const m = Math.max(0, Math.floor((Date.now() - ts) / 60000)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`; };
-  const ICONS = { MOTORCYCLE: '🏍️', CAR: '🚗', VAN: '🚐', TRUCK: '🚚' };
-  const METHOD_ICON = { CASH: '₨', EASYPAISA: 'EP', JAZZCASH: 'JC', BANK: '🏦' };
-
-  const api = async (path, opts = {}, token) => {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const res = await fetch(path, { headers, ...opts });
-    let data = {};
-    try { data = await res.json(); } catch (_) {}
-    if (!res.ok) { const e = new Error(data.error || `Request failed (${res.status})`); e.status = res.status; throw e; }
-    return data;
+  const $ = id => document.getElementById(id);
+  const el = (tag, className = '', text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined && text !== null) node.textContent = String(text); return node; };
+  const money = value => 'PKR ' + Number(value || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 });
+  const fmt = iso => iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  const duration = iso => { if (!iso) return '—'; const mins = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000)); return mins < 60 ? mins + 'm' : `${Math.floor(mins / 60)}h ${mins % 60}m`; };
+  const labels = { CAR: 'Cars', MOTORCYCLE: 'Bikes', VAN: 'Vans', TRUCK: 'Trucks' };
+  const zoneIcon = (type, cls = '') => { const image = el('img', cls); image.src = `img/${type === 'MOTORCYCLE' ? 'bike' : type.toLowerCase()}.svg`; image.alt = ''; return image; };
+  const methodNames = { EASYPAISA: 'easypaisa', JAZZCASH: 'JazzCash', BANK: 'Bank transfer', CASH: 'Cash' };
+  const methodLogo = m => m.id === 'EASYPAISA' ? 'img/easypaisa.png' : m.id === 'JAZZCASH' ? 'img/jazzcash.png' : m.bankName === 'MEEZAN' ? 'img/meezan.webp' : 'img/hbl.png';
+  const request = async (path, payload, token) => {
+    const headers = { Accept: 'application/json' }; if (token) headers.Authorization = 'Bearer ' + token;
+    const options = { headers, cache: 'no-store' };
+    if (payload !== undefined) { options.method = 'POST'; headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(payload); }
+    const res = await fetch(path, options);
+    let body; try { body = await res.json(); } catch (_) { body = {}; }
+    if (!res.ok) { const error = new Error(body.error || 'Request failed. Please try again.'); error.status = res.status; throw error; }
+    return body;
   };
-
-  /* Theme */
-  const root = document.documentElement;
-  root.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  const tt = $('themeToggle');
-  if (tt) tt.addEventListener('click', () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('theme', root.dataset.theme); });
-
-  /* Clock */
-  const clk = $('clock');
-  if (clk) { const tick = () => { clk.textContent = new Date().toLocaleString(); }; tick(); setInterval(tick, 1000); }
-
-  /* Toast */
   let toastTimer;
-  const toast = (msg, type = 'ok') => { const t = $('toast'); if (!t) return; t.textContent = msg; t.className = `toast show ${type}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3400); };
+  const toast = (text, error = false) => { const node = $('toast'); if (!node) return; node.textContent = text; node.className = 'toast show' + (error ? ' error' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => { node.className = 'toast'; }, 4800); };
+  const handleError = error => toast(error && error.message ? error.message : 'Please try again.', true);
 
-  /* 3D tilt on cards */
-  const isTouch = matchMedia('(hover: none)').matches;
-  const tilt = (root = document) => {
-    if (isTouch) return;
-    root.querySelectorAll('.tilt').forEach(c => {
-      if (c.dataset.tilt) return; c.dataset.tilt = '1';
-      c.addEventListener('mousemove', (e) => {
-        const r = c.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
-        c.style.transform = `perspective(900px) rotateX(${-y * 6}deg) rotateY(${x * 8}deg) translateY(-3px)`;
+  try { document.documentElement.dataset.theme = localStorage.getItem('orbit-theme') === 'dark' ? 'dark' : 'light'; } catch (_) {}
+  if ($('themeToggle')) $('themeToggle').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next; try { localStorage.setItem('orbit-theme', next); } catch (_) {}
+  });
+  if ($('clock')) { const clock = () => { $('clock').textContent = new Date().toLocaleString('en-PK'); }; clock(); setInterval(clock, 1000); }
+  if ($('year')) $('year').textContent = new Date().getFullYear();
+  if ($('burger')) $('burger').addEventListener('click', () => {
+    const open = $('siteNav').classList.toggle('open'); $('burger').setAttribute('aria-expanded', String(open));
+  });
+  if ($('siteNav')) $('siteNav').addEventListener('click', event => {
+    if (event.target.closest('a')) { $('siteNav').classList.remove('open'); $('burger').setAttribute('aria-expanded', 'false'); }
+  });
+
+  const badge = (text, status = text) => el('span', 'status-badge ' + status, String(text).replaceAll('_', ' '));
+  const detailCard = t => {
+    const box = el('div', 'ticket-card'); const heading = el('h4', '', `${labels[t.vehicleType] || t.vehicleType} · ${t.plate} · ${t.spotId}`);
+    box.append(heading, badge(t.paymentStatus === 'PENDING_VERIFICATION' ? 'Awaiting verification' : t.status, t.paymentStatus === 'PENDING_VERIFICATION' ? 'PENDING_VERIFICATION' : t.status));
+    const grid = el('div', 'ticket-grid');
+    const rows = [['Booking code', t.id], ['Source', t.channel === 'ONLINE' ? 'Online reservation' : 'Gate walk-in'],
+      ['Vehicle', t.vehicleType], ['Created', fmt(t.createdAt)]];
+    if (t.channel === 'ONLINE' && t.status === 'RESERVED') rows.push(['Check in before', fmt(t.expiresAt)]);
+    if (t.entryTime) rows.push(['Checked in', fmt(t.entryTime)]);
+    if (t.status === 'PARKED') rows.push(['Current fee', money(t.currentFee)]);
+    if (t.status === 'CLOSED') rows.push(['Exit', fmt(t.exitTime)], ['Amount charged', money(t.fee)]);
+    rows.forEach(([name, value]) => { const cell = el('div'); cell.append(el('span', '', name), el('strong', '', value)); grid.append(cell); });
+    box.append(grid);
+    if (t.note && t.paymentStatus !== 'PAID') box.append(el('div', 'notice-box', t.note));
+    return box;
+  };
+  const renderZoneMap = (mount, zones, onSpotClick) => {
+    mount.replaceChildren();
+    zones.forEach(zone => {
+      const wrap = el('section', 'map-zone'); const head = el('header');
+      const title = el('h3'); title.append(zoneIcon(zone.type), document.createTextNode(`${labels[zone.type]} · ${zone.total} bays`));
+      head.append(title, el('small', '', `${zone.free} available`)); wrap.append(head);
+      const grid = el('div', 'spot-grid');
+      zone.spots.forEach(spot => {
+        const node = el(onSpotClick ? 'button' : 'div', 'spot ' + spot.status.toLowerCase());
+        if (onSpotClick) { node.type = 'button'; node.disabled = spot.status === 'RESERVED' || spot.status === 'OCCUPIED'; node.addEventListener('click', () => onSpotClick(spot)); }
+        node.title = `${spot.id}: ${spot.status.toLowerCase()}` + (spot.plate ? ` · ${spot.plate}` : '');
+        node.setAttribute('aria-label', node.title);
+        node.append(el('span', '', spot.id), el('small', '', spot.status === 'OCCUPIED' ? 'In use' : spot.status === 'RESERVED' ? 'Held' : spot.status === 'BLOCKED' ? 'Closed' : 'Open'));
+        grid.append(node);
       });
-      c.addEventListener('mouseleave', () => { c.style.transform = ''; });
+      wrap.append(grid); mount.append(wrap);
     });
   };
-  /* Hero parallax */
-  const hero = $('hero'), heroImg = $('heroImg');
-  if (hero && heroImg) hero.addEventListener('mousemove', (e) => {
-    const r = hero.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
-    heroImg.style.setProperty('--px', `${x * -18}px`); heroImg.style.setProperty('--py', `${y * -12}px`);
-  });
-
-  /* Count-up animation */
-  const countTo = (node, value, suffix = '') => {
-    const target = Number(value) || 0; const start = Number(node.dataset.v || 0); const t0 = performance.now();
-    const step = (t) => { const p = Math.min(1, (t - t0) / 600); const v = start + (target - start) * (1 - Math.pow(1 - p, 3));
-      node.textContent = (Number.isInteger(target) ? Math.round(v) : v.toFixed(1)) + suffix; if (p < 1) requestAnimationFrame(step); };
-    node.dataset.v = target; requestAnimationFrame(step);
-  };
-
-  /* Tiny deterministic "QR-like" code from a string (visual identifier, pure canvas) */
-  const qrLike = (text) => {
-    const c = document.createElement('canvas'); const n = 21; c.width = c.height = n; const ctx = c.getContext('2d');
-    let h = 2166136261; const bits = [];
-    for (let i = 0; i < n * n; i++) { h ^= text.charCodeAt(i % text.length); h = Math.imul(h, 16777619) >>> 0; bits.push((h >>> 7) & 1); }
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, n, n); ctx.fillStyle = '#111';
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (bits[y * n + x]) ctx.fillRect(x, y, 1, 1);
-    const finder = (x, y) => { ctx.fillStyle = '#111'; ctx.fillRect(x, y, 7, 7); ctx.fillStyle = '#fff'; ctx.fillRect(x + 1, y + 1, 5, 5); ctx.fillStyle = '#111'; ctx.fillRect(x + 2, y + 2, 3, 3); };
-    finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
-    const img = el('img', 'qr'); img.src = c.toDataURL(); img.alt = 'ticket code'; return img;
-  };
-
-  /* Receipt renderer */
-  const renderReceipt = (container, t, isExit) => {
-    container.textContent = '';
-    const rh = el('div', 'rh', 'FIVE STAR PARKING'); rh.append(el('small', '', isExit ? 'PAYMENT RECEIPT' : 'ENTRY TICKET')); container.append(rh);
-    const rows = [['Ticket #', t.id], ['Plate', t.plate], ['Owner', t.owner], ['Vehicle', `${ICONS[t.vehicleType] || ''} ${t.vehicleType}`], ['Spot', t.spotId], ['Entry', fmt(t.entryTime)]];
-    if (isExit) rows.push(['Exit', fmt(t.exitTime)], ['Rate / hr', money(t.hourlyRate)], ['Method', t.paymentMethod || 'CASH']);
-    if (isExit && t.paymentAccount) rows.push(['Account', t.paymentAccount]);
-    if (isExit && t.paymentRef) rows.push(['TXN Ref', t.paymentRef]);
-    rows.forEach(([k, v]) => { const d = el('div', 'l'); d.append(el('span', '', k), el('span', '', v)); container.append(d); });
-    if (isExit) { const d = el('div', 'l total'); d.append(el('span', '', 'TOTAL PAID'), el('span', '', money(t.fee))); container.append(d); }
-    container.append(qrLike(t.id + t.plate));
-    if (t.signature) container.append(el('div', 'sig', 'Digital signature: ' + t.signature));
-  };
-
-  const downloadTicket = (t) => {
-    const payload = { system: 'Five Star Parking', id: t.id, plate: t.plate, owner: t.owner, vehicleType: t.vehicleType, spotId: t.spotId,
-      entryTime: t.entryTime, exitTime: t.exitTime, fee: t.fee, paymentMethod: t.paymentMethod, paymentRef: t.paymentRef, signature: t.signature };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `ticket-${t.id}-${t.plate}.json`; document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  };
-
-  /* Self-contained HTML receipt (works offline, printable) */
-  const receiptHtml = (t, isExit) => {
-    const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const rows = [['Ticket #', t.id], ['Plate', t.plate], ['Owner', t.owner], ['Vehicle', t.vehicleType], ['Spot', t.spotId], ['Entry', fmt(t.entryTime)]];
-    if (isExit) rows.push(['Exit', fmt(t.exitTime)], ['Rate / hr', money(t.hourlyRate)], ['Payment', t.paymentMethod || 'CASH']);
-    if (isExit && t.paymentAccount) rows.push(['Account', t.paymentAccount]);
-    if (isExit && t.paymentRef) rows.push(['TXN Ref', t.paymentRef]);
-    const tr = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
-    const total = isExit ? `<tr class="t"><td>TOTAL PAID</td><td>${esc(money(t.fee))}</td></tr>` : '';
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ${esc(t.id)}</title><style>body{font-family:Segoe UI,system-ui,sans-serif;background:#f3f5f9;margin:0;padding:30px;display:flex;justify-content:center}.r{background:#fff;width:380px;padding:28px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12)}h1{margin:0;font-size:1.2rem;letter-spacing:2px;text-align:center}h1+p{text-align:center;color:#64748b;margin:4px 0 18px;font-size:.8rem}table{width:100%;border-collapse:collapse;font-size:.9rem}td{padding:7px 0;border-bottom:1px dashed #e2e8f0}td:last-child{text-align:right;font-weight:600;word-break:break-all}tr.t td{border:none;font-size:1.15rem;color:#2563eb;padding-top:14px;font-weight:800}.s{margin-top:16px;font-size:.6rem;color:#94a3b8;word-break:break-all}.ok{margin-top:14px;text-align:center;font-size:.75rem;color:#059669;font-weight:700}@media print{body{background:#fff;padding:0}.r{box-shadow:none}}</style></head><body><div class="r"><h1>★ FIVE STAR PARKING ★</h1><p>${isExit ? 'PAYMENT RECEIPT' : 'ENTRY TICKET'}</p><table>${tr}${total}</table><div class="ok">✔ Digitally signed &amp; verified</div><div class="s">Signature: ${esc(t.signature || '')}</div></div></body></html>`;
-  };
-  /* ---- Receipt as PNG image (canvas) ---- */
-  const rrect = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
-  const wrapText = (ctx, text, maxW) => { const words = String(text).split(' '); const lines = []; let cur = ''; words.forEach(w => { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }); if (cur) lines.push(cur); return lines; };
-  const receiptCanvas = (t, isExit) => {
-    const W = 720, pad = 44, scale = 2;
-    const rows = [['Ticket #', t.id], ['Plate', t.plate], ['Owner', t.owner], ['Vehicle', t.vehicleType], ['Spot', t.spotId], ['Entry', fmt(t.entryTime)]];
-    if (isExit) rows.push(['Exit', fmt(t.exitTime)], ['Rate / hr', money(t.hourlyRate)], ['Payment', t.paymentMethod || 'CASH']);
-    if (isExit && t.paymentAccount) rows.push(['Account', t.paymentAccount]);
-    if (isExit && t.paymentRef) rows.push(['TXN Ref', t.paymentRef]);
-    const H = 300 + rows.length * 46 + (isExit ? 90 : 0) + 200;
-    const c = document.createElement('canvas'); c.width = W * scale; c.height = H * scale;
-    const ctx = c.getContext('2d'); ctx.scale(scale, scale);
-    ctx.fillStyle = '#eef2f7'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#ffffff'; ctx.shadowColor = 'rgba(0,0,0,.15)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
-    rrect(ctx, 20, 20, W - 40, H - 40, 22); ctx.fill(); ctx.shadowColor = 'transparent';
-    const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#2563eb'); g.addColorStop(1, '#7c3aed');
-    ctx.save(); rrect(ctx, 20, 20, W - 40, H - 40, 22); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(20, 20, W - 40, 120); ctx.restore();
-    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 30px Segoe UI, Arial, sans-serif'; ctx.fillText('\u2605 FIVE STAR PARKING \u2605', W / 2, 72);
-    ctx.font = '16px Segoe UI, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillText(isExit ? 'PAYMENT RECEIPT' : 'ENTRY TICKET', W / 2, 104);
-    let y = 190; ctx.textAlign = 'left';
-    rows.forEach(([k, v]) => {
-      ctx.fillStyle = '#64748b'; ctx.font = '16px Segoe UI, Arial, sans-serif'; ctx.fillText(k, pad, y);
-      ctx.fillStyle = '#111827'; ctx.font = 'bold 17px Segoe UI, Arial, sans-serif'; ctx.textAlign = 'right'; ctx.fillText(String(v == null ? '' : v), W - pad, y); ctx.textAlign = 'left';
-      ctx.strokeStyle = '#e2e8f0'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(pad, y + 14); ctx.lineTo(W - pad, y + 14); ctx.stroke(); ctx.setLineDash([]);
-      y += 46;
+  const picker = (mount, methods, onSelect, selected) => {
+    mount.replaceChildren();
+    methods.filter(m => m.id !== 'CASH' && m.enabled).forEach(m => {
+      const button = el('button', 'method-option' + (m.id === selected ? ' active' : '')); button.type = 'button';
+      button.setAttribute('aria-pressed', String(m.id === selected));
+      const img = el('img'); img.src = methodLogo(m); img.alt = '';
+      button.append(img, document.createTextNode(m.id === 'BANK' ? m.bankName + ' transfer' : methodNames[m.id]));
+      button.addEventListener('click', () => onSelect(m)); mount.append(button);
     });
-    if (isExit) {
-      y += 14; ctx.fillStyle = '#eff6ff'; rrect(ctx, pad - 10, y - 30, W - pad * 2 + 20, 64, 14); ctx.fill();
-      ctx.fillStyle = '#1e3a8a'; ctx.font = 'bold 20px Segoe UI, Arial, sans-serif'; ctx.fillText('TOTAL PAID', pad + 6, y + 10);
-      ctx.textAlign = 'right'; ctx.fillStyle = '#2563eb'; ctx.font = 'bold 30px Segoe UI, Arial, sans-serif'; ctx.fillText(money(t.fee), W - pad - 6, y + 12); ctx.textAlign = 'left';
-      y += 76;
+  };
+  const destination = (mount, m, due) => {
+    mount.replaceChildren(); mount.classList.remove('hidden');
+    mount.append(el('span', '', `Send exactly ${money(due)} to ${m.id === 'BANK' ? m.bankName : methodNames[m.id]}`),
+      el('b', '', m.destination), el('small', '', 'Account name: ' + m.accountName + ' · Verify the beneficiary in your own app before sending.'));
+  };
+
+  /* The JSON file is the customer's signed evidence for this specific phase. Never fake a QR code. */
+  const receiptFile = t => ({ system: 'Orbit Park', receiptType: t.receiptType,
+    id: t.id, plate: t.plate, owner: t.owner, vehicleType: t.vehicleType, spotId: t.spotId,
+    channel: t.channel, createdAt: t.createdAt, expiresAt: t.expiresAt,
+    entryTime: t.entryTime, exitTime: t.exitTime, pendingAt: t.pendingAt, hourlyRate: t.hourlyRate, fee: t.fee,
+    paymentMethod: t.paymentMethod, paymentAccount: t.paymentAccount, paymentRef: t.paymentRef,
+    collectedBy: t.collectedBy, cashTendered: t.cashTendered, note: t.note, signature: t.signature });
+  const receiptRows = t => {
+    const rows = [['Booking', t.id], ['Plate', t.plate], ['Owner', t.owner], ['Vehicle', t.vehicleType],
+      ['Dedicated bay', t.spotId], ['Channel', t.channel === 'ONLINE' ? 'Online booking' : 'Gate entry'], ['Booked', fmt(t.createdAt)]];
+    if (t.receiptType === 'RESERVATION') rows.push(['Arrive before', fmt(t.expiresAt)]);
+    if (t.entryTime && t.receiptType !== 'RESERVATION') rows.push(['Check-in', fmt(t.entryTime)], ['Rate / hour', money(t.hourlyRate)]);
+    if (t.receiptType === 'PAYMENT') {
+      rows.push(['Exit', fmt(t.exitTime)], ['Method', methodNames[t.paymentMethod] || 'No charge']);
+      if (t.pendingAt && t.paymentMethod && t.paymentMethod !== 'CASH') rows.push(['Meter stopped', fmt(t.pendingAt)]);
+      if (t.paymentAccount) rows.push(['Sender', t.paymentAccount]);
+      if (t.paymentRef) rows.push(['Reference', t.paymentRef]);
+      if (t.collectedBy) rows.push(['Processed by', t.collectedBy]);
+      if (t.paymentMethod === 'CASH') rows.push(['Cash received', money(t.cashTendered)], ['Change returned', money(t.cashChange)]);
+      if (t.note) rows.push(['Note', t.note]);
     }
-    y += 16; const n = 21, cell = 5, qx = W / 2 - (n * cell) / 2; let h = 2166136261; const key = t.id + t.plate;
-    ctx.fillStyle = '#111';
-    for (let i = 0; i < n * n; i++) { h ^= key.charCodeAt(i % key.length); h = Math.imul(h, 16777619) >>> 0; if ((h >>> 7) & 1) ctx.fillRect(qx + (i % n) * cell, y + Math.floor(i / n) * cell, cell, cell); }
-    const finder = (fx, fy) => { ctx.fillStyle = '#111'; ctx.fillRect(fx, fy, 7 * cell, 7 * cell); ctx.fillStyle = '#fff'; ctx.fillRect(fx + cell, fy + cell, 5 * cell, 5 * cell); ctx.fillStyle = '#111'; ctx.fillRect(fx + 2 * cell, fy + 2 * cell, 3 * cell, 3 * cell); };
-    finder(qx, y); finder(qx + (n - 7) * cell, y); finder(qx, y + (n - 7) * cell);
-    y += n * cell + 30;
-    ctx.textAlign = 'center'; ctx.fillStyle = '#059669'; ctx.font = 'bold 14px Segoe UI, Arial, sans-serif'; ctx.fillText('\u2714 Digitally signed & verified', W / 2, y); y += 22;
-    ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace'; wrapText(ctx, 'Signature: ' + (t.signature || ''), W - pad * 2).forEach(l => { ctx.fillText(l, W / 2, y); y += 13; });
-    ctx.fillStyle = '#94a3b8'; ctx.font = '12px Segoe UI, Arial, sans-serif'; ctx.fillText('Keep this receipt. Thank you for parking with us.', W / 2, H - 40);
-    return c;
+    return rows;
   };
-  const downloadReceiptImage = (t, isExit) => new Promise((resolve) => {
-    const c = receiptCanvas(t, isExit); const name = `receipt-${t.id}.png`;
-    if (c.toBlob) c.toBlob(b => { saveBlob(b, name); resolve(); }, 'image/png');
-    else { const a = el('a'); a.href = c.toDataURL('image/png'); a.download = name; document.body.append(a); a.click(); a.remove(); resolve(); }
-  });
-  const shareReceiptImage = async (t, isExit) => {
-    if (!navigator.share || !navigator.canShare) return false;
-    const c = receiptCanvas(t, isExit);
-    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-    const file = new File([blob], `receipt-${t.id}.png`, { type: 'image/png' });
-    if (!navigator.canShare({ files: [file] })) return false;
-    try { await navigator.share({ files: [file], title: 'Parking receipt ' + t.id }); return true; } catch (_) { return false; }
+  const receiptLabel = t => t.receiptType === 'RESERVATION' ? 'RESERVATION PASS' : t.receiptType === 'ENTRY' ? 'ENTRY TICKET' : t.paymentMethod ? 'PAYMENT RECEIPT' : 'NO-CHARGE EXIT RECEIPT';
+  const renderReceipt = (mount, t) => {
+    mount.replaceChildren(); const head = el('div', 'receipt-head'); head.append(el('strong', '', 'ORBIT PARK'), el('small', '', receiptLabel(t))); mount.append(head);
+    receiptRows(t).forEach(([label, value]) => { const row = el('div', 'receipt-row'); row.append(el('span', '', label), el('span', '', value)); mount.append(row); });
+    if (t.receiptType === 'PAYMENT') { const total = el('div', 'receipt-row receipt-total'); total.append(el('span', '', t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'), el('span', '', money(t.fee))); mount.append(total); }
+    if (t.signature) mount.append(el('div', 'receipt-sign', `HMAC-SHA256 signature: ${t.signature}`));
+    mount.append(el('p', 'receipt-note', 'Keep this pass. Thank you for choosing Orbit Park.'));
   };
-
-  const saveBlob = (blob, name) => { const a = el('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
-  const downloadReceipt = (t, isExit) => saveBlob(new Blob([receiptHtml(t, isExit)], { type: 'text/html' }), `receipt-${t.id}.html`);
-  const printReceipt = (t, isExit) => {
-    const w = window.open('', '_blank', 'width=520,height=720');
-    if (!w) { downloadReceipt(t, isExit); return; }
-    w.document.open(); w.document.write(receiptHtml(t, isExit)); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const receiptHtml = t => {
+    const lines = receiptRows(t).map(([a, b]) => `<div class="row"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join('');
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Orbit Park ${esc(t.id)}</title><style>body{font-family:Arial,sans-serif;background:#eee;margin:0;padding:30px;color:#1b1b1b}.paper{width:min(400px,100%);box-sizing:border-box;background:#fff;margin:auto;padding:26px;border-top:7px solid #c80d2a;box-shadow:0 12px 35px #ccc}h1{font-size:22px;letter-spacing:4px;text-align:center;margin:7px 0}h2{color:#bc1027;text-align:center;font-size:12px;letter-spacing:2px;margin-bottom:20px}.row{display:flex;justify-content:space-between;gap:15px;border-bottom:1px dashed #ddd;padding:8px 0;font-size:12px}.row b{text-align:right;overflow-wrap:anywhere}.total{color:#bb0e28;font-size:17px;font-weight:800;margin-top:20px}.sig{font-size:9px;overflow-wrap:anywhere;color:#777;margin-top:22px}@media print{body{background:#fff;padding:0}.paper{box-shadow:none}}</style></head><body><div class="paper"><h1>ORBIT PARK</h1><h2>${esc(receiptLabel(t))}</h2>${lines}${t.receiptType === 'PAYMENT' ? `<div class="row total"><span>${t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'}</span><b>${esc(money(t.fee))}</b></div>` : ''}<div class="sig">HMAC-SHA256 signature: ${esc(t.signature)}</div></div></body></html>`;
   };
-
-  const spotNode = (s, onClick) => {
-    const status = (s.status || (s.free ? 'FREE' : 'OCCUPIED')).toLowerCase();
-    const d = el('div', `spot ${status}`);
-    d.title = status === 'free' ? `${s.id} · ${s.type} · Free` : status === 'blocked' ? `${s.id} · Blocked by admin` : s.plate ? `${s.id} · ${s.type} · ${s.plate} · ${s.owner || ''}` : `${s.id} · ${s.type} · Booked`;
-    d.append(el('i', 'dot'));
-    if (status === 'occupied') d.append(el('span', 'car', ICONS[s.vehicleType] || '🚗'));
-    else if (status === 'blocked') d.append(el('span', 'car', '⛔'));
-    else d.append(el('span', 'car', s.type[0]));
-    d.append(el('b', '', s.id), el('small', '', status === 'occupied' ? (s.plate || 'booked') : status === 'blocked' ? 'blocked' : s.type.toLowerCase()));
-    if (onClick) d.addEventListener('click', () => onClick(s));
-    return d;
+  const saveBlob = (blob, name) => {
+    if (!blob) throw new Error('Could not create image. Please try HTML or print instead.');
+    const link = el('a'); link.href = URL.createObjectURL(blob); link.download = name; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 10000);
   };
-
-  const renderFloors = (wrap, floors, onSpotClick) => {
-    wrap.textContent = '';
-    floors.forEach(f => {
-      const fl = el('div', 'floor');
-      const h = el('h4'); const lvl = el('span', 'lvl'); lvl.append(el('i', '', 'F' + f.level), el('span', '', `Floor ${f.level}`)); h.append(lvl, el('span', 'muted', `${f.free} / ${f.total} free`)); fl.append(h);
-      const grid = el('div', 'spots');
-      f.spots.forEach((s, i) => { const n = spotNode(s, onSpotClick); n.style.animationDelay = (i * 18) + 'ms'; grid.append(n); });
-      fl.append(grid); wrap.append(fl);
+  const imageBlob = async t => {
+    const rows = receiptRows(t), width = 760, scale = 2;
+    // Keep long references and manager notes complete in exported PNGs.
+    const linesFor = value => {
+      let text = String(value ?? '—').replace(/[\r\n]+/g, ' ').trim(); const lines = [];
+      while (text.length > 38) {
+        const space = text.lastIndexOf(' ', 38), cut = space > 15 ? space : 38;
+        lines.push(text.slice(0, cut)); text = text.slice(cut).trimStart();
+      }
+      if (text) lines.push(text);
+      return lines.length ? lines : ['—'];
+    };
+    const rowHeight = value => Math.max(47, linesFor(value).length * 21 + 24);
+    const height = 230 + rows.reduce((sum, [, value]) => sum + rowHeight(value), 0) + (t.receiptType === 'PAYMENT' ? 100 : 0) + 100;
+    const canvas = el('canvas'); canvas.width = width * scale; canvas.height = height * scale;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas is not supported on this device'); context.scale(scale, scale);
+    context.fillStyle = '#f1f1f1'; context.fillRect(0, 0, width, height); context.fillStyle = '#fff'; context.fillRect(22, 20, width - 44, height - 40);
+    context.fillStyle = '#1b1b1b'; context.fillRect(22, 20, width - 44, 145); context.fillStyle = '#c80d2a'; context.fillRect(22, 20, 10, 145);
+    context.textAlign = 'center'; context.fillStyle = '#fff'; context.font = 'bold 38px Arial, sans-serif'; context.fillText('ORBIT PARK', width / 2, 81);
+    context.fillStyle = '#ff6c81'; context.font = 'bold 17px Arial, sans-serif'; context.fillText(receiptLabel(t), width / 2, 122);
+    let y = 213; context.textAlign = 'left';
+    rows.forEach(([key, value]) => {
+      context.fillStyle = '#666'; context.font = '17px Arial, sans-serif'; context.fillText(String(key), 55, y);
+      context.fillStyle = '#1b1b1b'; context.font = 'bold 17px Arial, sans-serif'; context.textAlign = 'right';
+      const lines = linesFor(value);
+      lines.forEach((line, index) => context.fillText(line, width - 55, y + index * 21, 430));
+      context.textAlign = 'left';
+      const bottom = y + rowHeight(value) - 33;
+      context.strokeStyle = '#ddd'; context.setLineDash([4, 4]); context.beginPath(); context.moveTo(55, bottom); context.lineTo(width - 55, bottom); context.stroke(); context.setLineDash([]); y += rowHeight(value);
     });
+    if (t.receiptType === 'PAYMENT') { context.fillStyle = '#c80d2a'; context.font = 'bold 23px Arial, sans-serif'; context.fillText(t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE', 55, y + 42); context.textAlign = 'right'; context.fillText(money(t.fee), width - 55, y + 42); context.textAlign = 'left'; y += 90; }
+    context.fillStyle = '#777'; context.font = '12px Arial, sans-serif'; context.fillText('Signed ticket · Verify with your saved JSON file at Orbit Park', 55, y + 30);
+    context.font = '10px monospace'; context.fillText('Signature: ' + (t.signature || '').slice(0, 90), 55, y + 51);
+    return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create image')), 'image/png'));
   };
-
-  return { $, el, money, fmt, dur, api, toast, tilt, countTo, renderReceipt, downloadTicket, downloadReceipt, downloadReceiptImage, shareReceiptImage, printReceipt, renderFloors, ICONS, METHOD_ICON };
+  let currentReceipt = null, lastFocus;
+  const showReceipt = t => {
+    if (!t || !t.signature || !t.receiptType) { toast('No signed receipt for this status yet.', true); return; }
+    currentReceipt = t; lastFocus = document.activeElement;
+    $('receiptTitle').textContent = receiptLabel(t); renderReceipt($('receiptContent'), t); $('receiptModal').hidden = false; $('receiptClose').focus();
+  };
+  const closeReceipt = () => { $('receiptModal').hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); };
+  if ($('receiptModal')) {
+    $('receiptClose').addEventListener('click', closeReceipt);
+    $('receiptModal').addEventListener('click', e => { if (e.target === $('receiptModal')) closeReceipt(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('receiptModal').hidden) closeReceipt(); });
+    $('receiptJson').addEventListener('click', () => currentReceipt && saveBlob(new Blob([JSON.stringify(receiptFile(currentReceipt), null, 2)], { type: 'application/json' }), `orbit-ticket-${currentReceipt.id}.json`));
+    $('receiptHtml').addEventListener('click', () => currentReceipt && saveBlob(new Blob([receiptHtml(currentReceipt)], { type: 'text/html' }), `orbit-receipt-${currentReceipt.id}.html`));
+    $('receiptPrint').addEventListener('click', () => {
+      if (!currentReceipt) return; const win = window.open('', '_blank', 'width=510,height=780');
+      if (!win) { saveBlob(new Blob([receiptHtml(currentReceipt)], { type: 'text/html' }), `orbit-receipt-${currentReceipt.id}.html`); toast('Pop-up blocked; HTML receipt downloaded instead.'); return; }
+      win.document.open(); win.document.write(receiptHtml(currentReceipt)); win.document.close(); win.focus(); setTimeout(() => win.print(), 350);
+    });
+    $('receiptPng').addEventListener('click', async () => { try { saveBlob(await imageBlob(currentReceipt), `orbit-receipt-${currentReceipt.id}.png`); toast('Receipt image saved'); } catch (err) { handleError(err); } });
+    $('receiptShare').addEventListener('click', async () => {
+      if (!currentReceipt) return;
+      try {
+        const blob = await imageBlob(currentReceipt), file = new File([blob], `orbit-receipt-${currentReceipt.id}.png`, { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Orbit Park receipt ' + currentReceipt.id });
+        else { saveBlob(blob, file.name); toast('Sharing unavailable; receipt downloaded instead.'); }
+      } catch (err) { if (err.name !== 'AbortError') handleError(err); }
+    });
+  }
+  return { $, el, money, fmt, duration, zoneIcon, labels, methodNames, methodLogo, request, toast, handleError, badge, detailCard, renderZoneMap, picker, destination, receiptFile, showReceipt };
 })();

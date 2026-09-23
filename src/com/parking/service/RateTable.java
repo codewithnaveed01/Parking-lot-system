@@ -17,7 +17,10 @@ public class RateTable {
         Map<String, String> saved = store.loadAll();
         for (VehicleType vt : VehicleType.values()) {
             String v = saved.get(PREFIX + vt.name());
-            if (v != null) try { rates.put(vt, Double.parseDouble(v)); } catch (NumberFormatException ignored) {}
+            if (v != null) try {
+                double parsed = Double.parseDouble(v);
+                if (Double.isFinite(parsed) && parsed >= 0 && parsed <= 100000) rates.put(vt, parsed);
+            } catch (NumberFormatException ignored) {}
         }
     }
 
@@ -25,8 +28,8 @@ public class RateTable {
     public synchronized Map<VehicleType, Double> all() { return new EnumMap<>(rates); }
 
     public synchronized void setRate(VehicleType vt, double rate) {
-        if (rate < 0 || rate > 100000 || Double.isNaN(rate)) throw new IllegalArgumentException("Rate must be between 0 and 100000");
-        rates.put(vt, rate);
+        if (!Double.isFinite(rate) || rate < 0 || rate > 100000) throw new IllegalArgumentException("Rate must be between 0 and 100000");
         store.put(PREFIX + vt.name(), String.valueOf(rate));
+        rates.put(vt, rate);
     }
 }

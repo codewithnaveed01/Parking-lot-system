@@ -14,13 +14,17 @@ public class HourlyPricing implements PricingStrategy {
 
     @Override
     public double calculate(Vehicle v, Duration d) {
-        long minutes = Math.max(0, d.toMinutes());
-        if (minutes <= GRACE_MINUTES) return 0.0;
-        long hours = (minutes + 59) / 60;
+        return calculateAtRate(d, rates == null ? v.getHourlyRate() : rates.getRate(v.getType()));
+    }
+
+    /** Use the rate locked at reservation / entry, so later admin changes do not affect this ticket. */
+    public double calculateAtRate(Duration d, double rate) {
+        long millis = Math.max(0, d.toMillis());
+        if (millis <= GRACE_MINUTES * 60_000L) return 0.0;
+        long hours = (millis + 3_600_000L - 1) / 3_600_000L;
         long days = hours / 24;
         long rem = hours % 24;
         long billable = days * DAILY_CAP_HOURS + Math.min(rem, DAILY_CAP_HOURS);
-        double rate = rates == null ? v.getHourlyRate() : rates.getRate(v.getType());
-        return billable * rate;
+        return Math.round(billable * rate * 100) / 100.0;
     }
 }
