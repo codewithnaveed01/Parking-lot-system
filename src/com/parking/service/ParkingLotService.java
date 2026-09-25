@@ -8,7 +8,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/** Single-level Orbit Park. All capacity-changing operations share this lock. */
+/** Single-level Salim Habib Parking. All capacity-changing operations share this lock. */
 public class ParkingLotService {
     private static final Map<VehicleType, Integer> CAPACITY = Map.of(
             VehicleType.MOTORCYCLE, 20, VehicleType.CAR, 40, VehicleType.VAN, 20, VehicleType.TRUCK, 10);

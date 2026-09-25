@@ -1,4 +1,6 @@
-# Orbit Park — shaded, single-level parking
+# Salim Habib Parking
+
+Developed by **Spidy** 🕷️
 
 A Java 17 + vanilla HTML/CSS/JS parking system with three **separate** experiences:
 
@@ -23,7 +25,7 @@ The visual identity is **red, black, and white**. The hero is a locally stored, 
 There are **two working accounting paths**, but **no merchant API credentials are included in this repository**:
 
 1. **At the gate (cash):** staff physically collect the money, enter the tendered amount on `/gate`, and confirm. The backend recalculates the fee, rejects underpayment/duplicate exits, records the guard and change, frees the bay, and issues a signed payment receipt. Zero-fee grace exits must be recorded with PKR 0 and are **not counted as revenue**.
-2. **Online transfer (easypaisa / JazzCash / HBL or Meezan IBAN):** admin first saves **Orbit Park's actual merchant destination(s)** under `/admin`. The customer sends money using **their own provider/bank app** and enters the provider's transaction reference. This creates a **PENDING_VERIFICATION** record; it is *not* payment, revenue, or permission to leave. The parking meter **pauses at submission**, so waiting for manager verification does not add a new billed hour. An admin independently checks the **real merchant statement** against the reference, method, amount **and transaction time** (it must correspond to the submission, not a later transfer) and approves or rejects it in the queue. Only approval issues a paid receipt and frees the bay. Gate staff can see the status and must not release a pending vehicle. Rejection cancels the pause and recalculates the fee from check-in to the present. A reference is unique per method, including rejected attempts, and cannot be reused. Managers can inspect each ticket's private lifecycle/payment audit in its **Details** action.
+2. **Online transfer (easypaisa / JazzCash / HBL or Meezan IBAN):** admin first saves **Salim Habib Parking's actual merchant destination(s)** under `/admin`. The customer sends money using **their own provider/bank app** and enters the provider's transaction reference. This creates a **PENDING_VERIFICATION** record; it is *not* payment, revenue, or permission to leave. The parking meter **pauses at submission**, so waiting for manager verification does not add a new billed hour. An admin independently checks the **real merchant statement** against the reference, method, amount **and transaction time** (it must correspond to the submission, not a later transfer) and approves or rejects it in the queue. Only approval issues a paid receipt and frees the bay. Gate staff can see the status and must not release a pending vehicle. Rejection cancels the pause and recalculates the fee from check-in to the present. A reference is unique per method, including rejected attempts, and cannot be reused. Managers can inspect each ticket's private lifecycle/payment audit in its **Details** action.
 
 **No automatic charge, hosted gateway redirect, card capture, provider webhook, refund, or bank disbursement is claimed.** Live automatic JazzCash/easypaisa/card payments would require approved merchant accounts, provider-specific API/secret keys, webhook verification, settlement/reconciliation and sandbox certification. Do **not** mark a transfer verified until it appears in the merchant's account. A no-charge admin release requires a reason and never creates fictional cash revenue. Do not configure real destination accounts on a public demo instance.
 
@@ -37,15 +39,15 @@ Requirements: **JDK 17+**. The JDBC driver is already in `lib/`. No Maven/npm re
 # Windows: run.bat 8090
 ```
 
-For **local development only**, defaults are `admin / admin1122` and `guard / guard1122`. Set strong **different** passwords in all other environments; the server refuses default passwords when `DATABASE_URL` is set.
+For **local development only**, defaults are `admin / admin1122` and `guard / guard1122`. Set strong **different** passwords (`ADMIN_PASS`, `GUARD_PASS`) in every public deployment; the server logs a warning when defaults are used.
 
 | Variable | Use |
 |---|---|
 | `PORT` | HTTP port (default 8080; `./run.sh [port]` overrides). Server binds `0.0.0.0`. |
 | `ADMIN_USER`, `ADMIN_PASS` | Manager login. |
 | `GUARD_USER`, `GUARD_PASS` | Independent gate login. |
-| `DATABASE_URL` | PostgreSQL connection URL. Without it, atomic `./data/` files are used (directory must be persistent on the host). |
-| `RECEIPT_SECRET` | Stable HMAC-SHA256 signing secret. Required (32+ chars) for PostgreSQL deployments. Local mode auto-generates `data/secret.key`. Back up the secret to keep older receipts verifiable. |
+| `DATABASE_URL` | PostgreSQL connection URL (on Railway: `${{Postgres.DATABASE_URL}}`). `DATABASE_PRIVATE_URL`, `DATABASE_PUBLIC_URL` or `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` also work. Without any of them, atomic `./data/` files are used. |
+| `RECEIPT_SECRET` | Optional HMAC-SHA256 signing secret. If unset, a key is generated once and stored in the database (`settings.receipt.secret`) so receipts stay verifiable across Railway redeploys. Local mode uses `data/secret.key`. |
 | `ORBIT_EASYPAISA_NUMBER`, `ORBIT_JAZZCASH_NUMBER`, `ORBIT_BANK_IBAN` | Optional initial payment destinations. Prefer configuring them in the admin UI; validate the bank/logo and beneficiary first. |
 
 With PostgreSQL: `DATABASE_URL='postgresql://…' ADMIN_PASS='…' GUARD_PASS='…' RECEIPT_SECRET='32+ characters…' ./run.sh`. Docker (`Dockerfile`) and Railway (`railway.json`) are supported. **Run one app instance per lot**; the in-process allocation lock is not distributed across multiple replicas. Serve through HTTPS in production. The provider-transfer workflow is manual until a real merchant gateway is integrated.
@@ -79,4 +81,4 @@ python3 test/api_flow.py  # starts its own isolated HTTP server and temporary da
 
 ## Image / mark attribution
 
-The **Orbit Park symbol** is an original SVG in `web/img/logo.svg`; the outdoor hero was generated for this project. Vehicle pictograms are original SVGs. The wallet and bank marks in `web/img/` are the actual companies' marks, not substitute letter-badges: [JazzCash (Wikimedia)](https://commons.wikimedia.org/wiki/File:JazzCash_logo_(2025).png), [easypaisa](https://crystalpng.com/product/easypaisa-logo/), [HBL](https://crystalpng.com/product/hbl-logo/), [Meezan Bank](https://iconlogovector.com/logo/meezan-bank). Those marks remain the property of their respective owners and appear only to identify offered payment routes, not to imply a commercial partnership. Only the selected **configured** bank is offered in checkout.
+The **Salim Habib Parking symbol** is an original SVG in `web/img/logo.svg`; the outdoor hero was generated for this project. Vehicle pictograms are original SVGs. The wallet and bank marks in `web/img/` are the actual companies' marks, not substitute letter-badges: [JazzCash (Wikimedia)](https://commons.wikimedia.org/wiki/File:JazzCash_logo_(2025).png), [easypaisa](https://crystalpng.com/product/easypaisa-logo/), [HBL](https://crystalpng.com/product/hbl-logo/), [Meezan Bank](https://iconlogovector.com/logo/meezan-bank). Those marks remain the property of their respective owners and appear only to identify offered payment routes, not to imply a commercial partnership. Only the selected **configured** bank is offered in checkout.

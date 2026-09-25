@@ -73,7 +73,7 @@
     const mount = $('gateMethods'), box = $('gateDestination'), form = $('gateTransferForm'); box.classList.add('hidden'); form.classList.add('hidden');
     const choose = method => { selected = method; picker(mount, methods, choose, selected.id); destination(box, method, t.currentFee); form.classList.remove('hidden'); };
     picker(mount, methods, choose, null);
-    if (!methods.some(m => m.enabled && m.id !== 'CASH')) mount.append(el('div', 'notice-box', 'No merchant transfer accounts are configured. Take cash with a receipt.'));
+    if (!methods.some(m => m.enabled && m.id !== 'CASH')) mount.append(el('div', 'notice-box', 'Online transfer not set up. Take cash.'));
   }
   const lookup = async quiet => {
     const q = $('gSearch').value.trim(); if (!q) { if (!quiet) toast('Enter a plate or booking code.', true); return; }

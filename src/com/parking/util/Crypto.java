@@ -13,6 +13,18 @@ public final class Crypto {
     private static final SecureRandom RNG = new SecureRandom();
     private final byte[] secret;
 
+    /** Use an explicit, already persisted signing key (e.g. stored in the database). */
+    public Crypto(byte[] secret) {
+        if (secret == null || secret.length < 16) throw new IllegalArgumentException("Receipt signing key must be at least 16 bytes");
+        this.secret = secret.clone();
+    }
+
+    /** Creates a new random key encoded as URL-safe Base64 text. */
+    public static String newSecret() {
+        byte[] k = new byte[32]; RNG.nextBytes(k);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(k);
+    }
+
     public Crypto(Path keyFile) {
         byte[] k;
         String env = System.getenv("RECEIPT_SECRET");

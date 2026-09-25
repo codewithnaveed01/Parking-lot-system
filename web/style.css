@@ -1,4 +1,4 @@
-/* Orbit Park — red / black / white. Single-level, shaded outdoor parking. */
+/* Salim Habib Parking — red / black / white. Single-level, shaded outdoor parking. */
 :root{--bg:#f8f8f7;--surface:#fff;--surface-2:#f1f1f0;--ink:#191919;--muted:#696969;--line:#e6e5e3;--red:#ca102a;--red-deep:#a00a20;--red-wash:#fff0f2;--black:#191919;--shadow:0 18px 48px rgba(21,20,20,.07);--radius:18px;color-scheme:light}
 [data-theme="dark"]{--bg:#111112;--surface:#1b1b1d;--surface-2:#262629;--ink:#fafafa;--muted:#b2b2b4;--line:#343437;--red:#ed3150;--red-deep:#c91234;--red-wash:#391d25;--black:#111112;--shadow:0 18px 48px rgba(0,0,0,.24);color-scheme:dark}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:105px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,"Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}button,input,select,textarea{font:inherit}button,a{-webkit-tap-highlight-color:transparent}a{color:inherit}button{cursor:pointer}img{max-width:100%}.hidden,[hidden]{display:none!important}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.shell{width:min(1220px,calc(100% - 48px));margin:auto}.muted{color:var(--muted)}.small{font-size:.82rem}.red-period,.brand-accent{color:var(--red)}.required{color:var(--red)}
@@ -23,3 +23,13 @@
 /* Manager-only lifecycle trail on each ticket. */
 .detail-audit-title{font-size:.7rem;letter-spacing:.12em;color:var(--red);margin:20px 0 8px}
 .audit-events{white-space:pre-wrap;overflow-wrap:anywhere;font:600 .7rem/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:12px;max-height:210px;overflow:auto;margin:0}
+
+/* Salim Habib Parking branding */
+.brand img.brand-logo{width:48px;height:48px;border-radius:12px;background:#fff;padding:4px;object-fit:contain;box-shadow:0 0 0 1px rgba(0,0,0,.08)}
+.brand b{letter-spacing:-.03em}
+.nav-clock{font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap}
+.dev-credit{text-align:center;margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12);font-size:.85rem;font-weight:700;color:#ddd}
+.footer:not(:has(.footer-inner)) .dev-credit{margin-top:0;padding-top:0;border-top:0}
+.dev-credit .spidy{color:#e11d2e;font-weight:900;letter-spacing:.02em}
+@media (max-width:720px){.nav-clock{display:none}}
+.toast:not(.show){opacity:0;visibility:hidden}

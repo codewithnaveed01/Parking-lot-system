@@ -19,7 +19,7 @@ public final class PaymentConfig {
         jazzcash = saved.getOrDefault("jazzcash", env("ORBIT_JAZZCASH_NUMBER"));
         bankIban = saved.getOrDefault("bankIban", env("ORBIT_BANK_IBAN").replaceAll("[\\s-]", "").toUpperCase());
         bankName = saved.getOrDefault("bankName", bankIban.length() >= 8 && bankIban.substring(4, 8).equals("MEZN") ? "MEEZAN" : "HBL");
-        accountName = saved.getOrDefault("accountName", "Orbit Park");
+        accountName = saved.getOrDefault("accountName", "Salim Habib Parking");
     }
 
     private static String env(String name) { return System.getenv(name) == null ? "" : System.getenv(name).trim(); }
