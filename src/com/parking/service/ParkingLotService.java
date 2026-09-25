@@ -85,6 +85,8 @@ public class ParkingLotService {
 
     public synchronized Ticket reserve(VehicleType type, String plate, String owner) { return allocate(type, plate, owner, Ticket.Channel.ONLINE); }
     public synchronized Ticket parkVehicle(VehicleType type, String plate, String owner) { return allocate(type, plate, owner, Ticket.Channel.GATE); }
+    /** Online "Park now": the bay is assigned and the meter starts immediately, no staff needed. */
+    public synchronized Ticket parkNow(VehicleType type, String plate, String owner) { return allocate(type, plate, owner, Ticket.Channel.SELF); }
 
     private Ticket allocate(VehicleType type, String plate, String owner, Ticket.Channel channel) {
         expireReservations();
@@ -97,10 +99,14 @@ public class ParkingLotService {
         return t;
     }
 
-    public synchronized Ticket checkIn(String id, String plate) {
+    public synchronized Ticket checkIn(String id, String plate) { return checkIn(id, plate, false); }
+    /** Driver confirms arrival without staff (e.g. on their phone at the lot). */
+    public synchronized Ticket selfCheckIn(String id, String plate) { return checkIn(id, plate, true); }
+
+    private Ticket checkIn(String id, String plate, boolean selfService) {
         Ticket t = requireActive(id, plate);
         if (t.getStatus() != Ticket.Status.RESERVED) throw new ParkingException("This reservation is already checked in", 409);
-        Ticket updated = t.copy(); updated.checkIn(Instant.now()); repo.save(updated);
+        Ticket updated = t.copy(); updated.checkIn(Instant.now(), selfService); repo.save(updated);
         activeByPlate.put(t.getVehicle().getLicensePlate(), updated);
         return updated;
     }
@@ -162,6 +168,27 @@ public class ParkingLotService {
         return updated;
     }
 
+    /**
+     * Unattended exit: free within the grace period, or after the driver has submitted an online transfer
+     * (the bay is released at once; the transfer stays pending until the manager reconciles it).
+     */
+    public synchronized Ticket selfExit(String id, String plate) {
+        Ticket t = requireActive(id, plate);
+        if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("Check in before exit", 409);
+        double due = currentFee(t);
+        if (!t.isPending() && due > 0)
+            throw new ParkingException("Pay " + Math.round(due) + " PKR online first, or pay cash at the gate", 409);
+        Ticket updated = t.copy(); updated.selfExit(Instant.now(), due); finish(t, updated);
+        return updated;
+    }
+
+    /** Every transfer still awaiting a manager decision, including self-service exits. */
+    public synchronized List<Ticket> getPendingPayments() {
+        expireReservations();
+        return repo.findAll().stream().filter(Ticket::isPending)
+                .sorted(Comparator.comparing(Ticket::getPendingAt, Comparator.nullsLast(Comparator.naturalOrder()))).collect(Collectors.toList());
+    }
+
     public synchronized Ticket submitTransfer(String id, String plate, PaymentMethod method, String reference, String senderLastFour) {
         Ticket t = requireActive(id, plate);
         if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("Check in before paying", 409);
@@ -173,7 +200,7 @@ public class ParkingLotService {
         if (!lastFour.isEmpty() && !lastFour.matches("\\d{4}")) throw new ParkingException("Sender account last four must be four digits");
         Instant submittedAt = Instant.now();
         double fee = feeAt(t, submittedAt);
-        if (fee <= 0) throw new ParkingException("Nothing to pay yet. Please use the gate for a free exit", 409);
+        if (fee <= 0) throw new ParkingException("Nothing to pay yet. Use Exit for a free exit", 409);
         for (Ticket existing : repo.findAll()) {
             boolean stillUsed = method == existing.getPaymentMethod()
                     && (ref.equalsIgnoreCase(existing.getPendingRef()) || ref.equalsIgnoreCase(existing.getPaymentRef()));
@@ -189,20 +216,23 @@ public class ParkingLotService {
     /** An administrator must check the merchant's actual wallet/bank statement before calling this. */
     public synchronized Ticket approveTransfer(String id, String staff) {
         Ticket t = gateLookup(id);
-        if (t.getStatus() != Ticket.Status.PARKED || !t.isPending()) throw new ParkingException("No pending transfer to verify", 409);
+        boolean leftAlready = t.getStatus() == Ticket.Status.CLOSED;
+        if ((t.getStatus() != Ticket.Status.PARKED && !leftAlready) || !t.isPending()) throw new ParkingException("No pending transfer to verify", 409);
         if (t.getPendingAt() == null || Math.abs(feeAt(t, t.getPendingAt()) - t.getPendingFee()) > 0.001)
             throw new ParkingException("The submitted transfer amount does not match the fee at the billing cutoff", 409);
-        Ticket updated = t.copy(); updated.approveTransfer(Instant.now(), staff); finish(t, updated);
+        Ticket updated = t.copy(); updated.approveTransfer(Instant.now(), staff);
+        if (leftAlready) repo.save(updated); else finish(t, updated);
         return updated;
     }
 
     public synchronized Ticket rejectTransfer(String id, String reason) {
         Ticket t = gateLookup(id);
-        if (t.getStatus() != Ticket.Status.PARKED || !t.isPending()) throw new ParkingException("No pending transfer", 409);
+        boolean leftAlready = t.getStatus() == Ticket.Status.CLOSED;
+        if ((t.getStatus() != Ticket.Status.PARKED && !leftAlready) || !t.isPending()) throw new ParkingException("No pending transfer", 409);
         String note = reason == null ? "" : reason.trim();
         if (note.length() < 4 || note.length() > 120) throw new ParkingException("Explain the rejection in 4–120 characters");
         Ticket updated = t.copy(); updated.rejectTransfer(note); repo.save(updated);
-        activeByPlate.put(t.getVehicle().getLicensePlate(), updated);
+        if (!leftAlready) activeByPlate.put(t.getVehicle().getLicensePlate(), updated);
         return updated;
     }
 
@@ -290,9 +320,13 @@ public class ParkingLotService {
         m.put("occupancyPercent", Math.round((occupied + reserved) * 1000.0 / spots.size()) / 10.0);
         m.put("zones", zones); m.put("totalRevenue", Math.round(total * 100) / 100.0);
         m.put("revenue24h", Math.round(day * 100) / 100.0); m.put("revenueByMethod", byMethod);
-        m.put("pendingPayments", activeByPlate.values().stream().filter(Ticket::isPending).count());
+        m.put("pendingPayments", all.stream().filter(Ticket::isPending).count());
+        m.put("unpaidExits", all.stream().filter(Ticket::isUnpaidAfterExit).count());
+        m.put("unpaidAmount", Math.round(all.stream().filter(Ticket::isUnpaidAfterExit).mapToDouble(Ticket::getFee).sum() * 100) / 100.0);
+        m.put("selfServiceBookings", all.stream().filter(t -> t.getChannel() != Ticket.Channel.GATE).count());
         m.put("totalTickets", all.size());
-        m.put("freeExits", all.stream().filter(t -> t.getStatus() == Ticket.Status.CLOSED && t.getPaymentMethod() == null).count());
+        m.put("freeExits", all.stream().filter(t -> t.getStatus() == Ticket.Status.CLOSED && t.getPaymentMethod() == null
+                && !t.isPending() && !t.isUnpaidAfterExit()).count());
         return m;
     }
 

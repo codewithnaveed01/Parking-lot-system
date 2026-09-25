@@ -12,7 +12,7 @@
 <body>
   <header class="topbar"><div class="shell nav-shell">
     <a class="brand" href="/" aria-label="Salim Habib Parking home"><img class="brand-logo" src="img/sh-logo.png" alt="Salim Habib Parking logo" width="48" height="48"><span><b>Salim Habib <span class="brand-accent">Parking</span></b></span></a>
-    <nav class="nav" id="siteNav" aria-label="Main navigation"><a href="#zones">Zones</a><a href="#booking">Book</a><a href="#manage">My booking</a><a href="#map">Live spots</a><a class="nav-gate" href="/gate">Gate</a><a href="/admin">Admin</a></nav>
+    <nav class="nav" id="siteNav" aria-label="Main navigation"><a href="#zones">Zones</a><a href="#booking">Book</a><a href="#manage">Check in / Exit</a><a href="#map">Live spots</a><a class="nav-gate" href="/gate">Gate</a><a href="/admin">Admin</a></nav>
     <div class="nav-actions"><button id="themeToggle" class="theme-toggle" type="button" title="Theme" aria-label="Switch light / dark theme">◐</button><a class="btn btn-red nav-cta" href="#booking">Reserve</a><button class="burger" id="burger" type="button" aria-controls="siteNav" aria-expanded="false" aria-label="Open menu"><span></span><span></span><span></span></button></div>
   </div></header>
 
@@ -30,16 +30,16 @@
       <section class="section" id="zones"><div class="section-heading"><div><h2>Parking zones</h2></div></div><div class="zone-cards" id="zoneCards" aria-live="polite"></div></section>
 
       <section class="section booking-section" id="booking"><div class="section-heading"><div><h2>Book a spot</h2></div></div>
-        <div class="booking-layout"><div class="panel form-panel"><div class="panel-head"><div class="panel-icon">01</div><div><h3>Reserve a bay</h3></div></div>
+        <div class="booking-layout"><div class="panel form-panel"><div class="mode-switch" role="radiogroup" aria-label="Booking type"><label class="mode-option"><input type="radio" name="bMode" value="reserve" checked><span><b>Reserve</b><small>Hold for 30 min</small></span></label><label class="mode-option"><input type="radio" name="bMode" value="park"><span><b>Park now</b><small>Meter starts now</small></span></label></div>
           <form id="bookingForm" autocomplete="off"><label for="bType">Vehicle category</label><select id="bType" required><option value="CAR">Car</option><option value="MOTORCYCLE">Bike</option><option value="VAN">Van</option><option value="TRUCK">Truck</option><option value="BUS">Bus</option></select>
             <div class="form-row"><div><label for="bPlate">License plate <span class="required">*</span></label><input id="bPlate" required maxlength="15" pattern="[A-Za-z0-9\- ]{2,15}" placeholder="e.g. LEA-4521" autocapitalize="characters"></div><div><label for="bOwner">Your name <span class="required">*</span></label><input id="bOwner" required maxlength="60" placeholder="Name"></div></div>
             <button class="btn btn-red btn-wide" type="submit" id="bookBtn">Reserve a spot</button>
           </form></div>
-          <aside class="process-panel"><h3>How it works</h3><div class="process-steps"><div><span class="process-num">01</span><div><b>Reserve online</b></div></div><div><span class="process-num">02</span><div><b>Check in at the gate</b></div></div><div><span class="process-num">03</span><div><b>Pay and exit</b></div></div></div><div class="process-foot">FIRST 15 MINUTES FREE</div></aside>
+          <aside class="process-panel"><h3>How it works</h3><div class="process-steps"><div><span class="process-num">01</span><div><b>Reserve or Park now</b></div></div><div><span class="process-num">02</span><div><b>Check in yourself or at the gate</b></div></div><div><span class="process-num">03</span><div><b>Pay online or cash, then exit</b></div></div></div><div class="process-foot">FIRST 15 MINUTES FREE · 24/7 SELF-SERVICE</div></aside>
         </div>
       </section>
 
-      <section class="section manage-section" id="manage"><div class="section-heading"><div><h2>My booking</h2></div></div>
+      <section class="section manage-section" id="manage"><div class="section-heading"><div><h2>Check in / Exit</h2></div></div>
         <div class="manage-layout"><div class="panel"><h3>Find your booking</h3><form class="form-row lookup-form" id="lookupForm"><div><label for="lookupId">Booking code</label><input id="lookupId" required maxlength="16" placeholder="Booking code" autocapitalize="characters"></div><div><label for="lookupPlate">License plate</label><input id="lookupPlate" required maxlength="15" placeholder="e.g. LEA-4521" autocapitalize="characters"></div><button class="btn btn-dark" type="submit">Find booking</button></form><div id="bookingResult" class="hidden" aria-live="polite"></div></div>
           <div class="rates-panel"><div class="rates-head"><h3>Rates</h3></div><div id="ratesList"></div><small>PKR per hour</small></div></div>
       </section>

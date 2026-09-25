@@ -23,9 +23,9 @@
     detailFocus = document.activeElement;
     $('detailsTitle').textContent = `Ticket ${t.id}`;
     const rows = [['Booking code', t.id], ['Vehicle', `${t.vehicleType} · ${t.plate}`], ['Owner', t.owner],
-      ['Dedicated bay', t.spotId], ['Source', t.channel === 'ONLINE' ? 'Online booking' : 'Gate walk-in'],
+      ['Dedicated bay', t.spotId], ['Source', Orbit.channelName(t.channel)],
       ['Status', t.status], ['Payment status', t.paymentStatus], ['Booked', fmt(t.createdAt)],
-      ['Arrival deadline', t.channel === 'ONLINE' ? fmt(t.expiresAt) : '—'],
+      ['Arrival deadline', t.channel === 'ONLINE' && t.expiresAt ? fmt(t.expiresAt) : '—'],
       ['Checked in', fmt(t.entryTime)], ['Exited / verified', fmt(t.exitTime)],
       ['Locked rate', money(t.hourlyRate) + ' / hour'],
       [t.status === 'PARKED' ? 'Due now' : 'Amount charged', money(t.status === 'PARKED' ? t.currentFee : t.fee)],
@@ -51,26 +51,28 @@
     $('methodTotals').replaceChildren();
     Object.entries(stats.revenueByMethod).forEach(([name, amount]) => { const card = el('div'); card.append(el('span', '', `${methodNames[name]} collected`), el('b', '', money(amount))); $('methodTotals').append(card); });
     const noCharge = el('div'); noCharge.append(el('span', '', 'No-charge exits'), el('b', '', stats.freeExits)); $('methodTotals').append(noCharge);
+    const unpaid = el('div'); unpaid.append(el('span', '', `Unpaid exits (${stats.unpaidExits})`), el('b', '', money(stats.unpaidAmount))); $('methodTotals').append(unpaid);
+    const self = el('div'); self.append(el('span', '', 'Online / self-service'), el('b', '', stats.selfServiceBookings)); $('methodTotals').append(self);
   };
   const loadPending = async () => {
-    const tickets = (await A('/api/admin/active')).filter(t => t.paymentStatus === 'PENDING_VERIFICATION');
+    const tickets = await A('/api/admin/pending');
     $('pendingList').replaceChildren();
     if (!tickets.length) { $('pendingList').append(el('div', 'empty-state', 'No pending transfers.')); return; }
     tickets.forEach(t => {
       const item = el('article', 'pending-item'), info = el('div'), sum = el('div', 'amount', money(t.pendingFee)), actions = el('div', 'pending-actions');
       info.append(el('strong', '', `${t.vehicleType} · ${t.plate} · ${t.spotId} · ${t.id}`),
-        el('small', '', `${methodNames[t.paymentMethod]} · ref ${t.pendingRef} · submitted ${fmt(t.pendingAt)} · ${t.channel.toLowerCase()} booking`));
+        el('small', '', `${methodNames[t.paymentMethod]} · ref ${t.pendingRef} · submitted ${fmt(t.pendingAt)} · ${t.status === 'CLOSED' ? 'vehicle already left (self-exit)' : 'vehicle still parked'}`));
       info.append(el('small', '', `Amount: ${money(t.pendingFee)}`));
-      const approve = el('button', 'btn btn-red', 'Verify & release'); approve.type = 'button';
+      const approve = el('button', 'btn btn-red', t.status === 'CLOSED' ? 'Verify' : 'Verify & release'); approve.type = 'button';
       approve.addEventListener('click', async () => {
         if (!confirm(`Have you independently verified an ACTUAL ${methodNames[t.paymentMethod]} deposit of ${money(t.pendingFee)} with reference ${t.pendingRef} in the merchant account? Check the transfer occurred when submitted (${fmt(t.pendingAt)}), not hours later. Do not approve based on the customer's claim alone.`)) return;
         approve.disabled = true;
-        try { const paid = await A('/api/admin/payment-approve', { id: t.id, verified: 'true' }); toast(`Payment verified; ${paid.spotId} released. Receipt ${paid.id} ready.`); showReceipt(paid); await refresh(); }
+        try { const paid = await A('/api/admin/payment-approve', { id: t.id, verified: 'true' }); toast(`Payment verified. Receipt ${paid.id} ready.`); showReceipt(paid); await refresh(); }
         catch (error) { fail(error); } finally { approve.disabled = false; }
       });
       const reject = el('button', 'btn btn-plain', 'Reject'); reject.type = 'button';
       reject.addEventListener('click', async () => { const reason = prompt('Why is this reference rejected? Customer will see this note.', 'Reference or amount not found in merchant statement'); if (reason === null) return;
-        try { await A('/api/admin/payment-reject', { id: t.id, reason }); toast(`Transfer for ${t.plate} rejected. Bay remains occupied.`); await refresh(); }
+        try { await A('/api/admin/payment-reject', { id: t.id, reason }); toast(t.status === 'CLOSED' ? `Rejected — ${t.plate} marked unpaid.` : `Transfer for ${t.plate} rejected. Bay remains occupied.`); await refresh(); }
         catch (error) { fail(error); }
       });
       const details = el('button', 'btn btn-plain', 'Details'); details.type = 'button'; details.addEventListener('click', () => showDetails(t));

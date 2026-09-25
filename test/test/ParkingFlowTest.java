@@ -166,6 +166,51 @@ public class ParkingFlowTest {
                 "concurrent riders cannot double-allocate the 40th bike bay");
         check(fullLot.getStats().get("freeSpots").equals(60), "full bike zone leaves other 60 vehicle-specific bays free");
         rejected(() -> fullLot.reserve(VehicleType.MOTORCYCLE, "OVERFLOW-B", "Rider"), "full bike zone never overflows into car/van/truck bays");
+        // Fully unattended online flows: separate Reserve and Park-now, self check-in and self-exit.
+        Path selfDir = Files.createTempDirectory("orbit-self-");
+        SettingsRepository selfSettings = new FileSettingsRepository(selfDir.resolve("settings.properties"));
+        PaymentConfig selfConfig = new PaymentConfig(selfSettings);
+        selfConfig.update("", "03001234567", "", "HBL", "Salim Habib Parking");
+        RateTable selfRates = new RateTable(selfSettings);
+        ParkingLotService selfLot = new ParkingLotService("Orbit Park", new FileTicketRepository(selfDir.resolve("tickets.db")),
+                selfSettings, selfRates, new HourlyPricing(selfRates), crypto, selfConfig);
+        Ticket now = selfLot.parkNow(VehicleType.CAR, "SELF-NOW", "Driver");
+        check(now.getStatus() == Ticket.Status.PARKED && now.getEntryTime() != null && now.getChannel() == Ticket.Channel.SELF,
+                "online park-now starts the meter immediately with no staff");
+        Ticket held = selfLot.reserve(VehicleType.VAN, "SELF-HOLD", "Driver");
+        check(held.getStatus() == Ticket.Status.RESERVED && held.getEntryTime() == null, "online reserve only holds the bay");
+        rejected(() -> selfLot.selfExit(held.getId(), "SELF-HOLD"), "cannot self-exit before check-in");
+        rejected(() -> selfLot.selfCheckIn(held.getId(), "WRONG-PLATE"), "self check-in needs the matching plate");
+        Ticket arrived = selfLot.selfCheckIn(held.getId(), "SELF-HOLD");
+        check(arrived.getStatus() == Ticket.Status.PARKED && arrived.getAuditTrail().contains("SELF_CHECK_IN"), "driver checks in without a guard");
+        Ticket leftFree = selfLot.selfExit(now.getId(), "SELF-NOW");
+        check(leftFree.getStatus() == Ticket.Status.CLOSED && leftFree.getFee() == 0, "free-period self exit releases the bay");
+        check(selfLot.getStats().get("freeSpots").equals(99), "self exit returns the bay to capacity");
+
+        Ticket longStay = new Ticket("SELFPAY12345", Vehicle.create(VehicleType.CAR, "SELF-PAY", "Payer"),
+                "C-05", Instant.now().minus(Duration.ofMinutes(70)), null, 0, null, "", "");
+        longStay.setAppliedRate(100);
+        Ticket longStay2 = new Ticket("SELFBAD12345", Vehicle.create(VehicleType.CAR, "SELF-BAD", "Payer"),
+                "C-06", Instant.now().minus(Duration.ofMinutes(70)), null, 0, null, "", "");
+        longStay2.setAppliedRate(100);
+        FileTicketRepository selfRepo = new FileTicketRepository(selfDir.resolve("tickets.db"));
+        selfRepo.save(longStay); selfRepo.save(longStay2);
+        ParkingLotService selfLot2 = new ParkingLotService("Orbit Park", new FileTicketRepository(selfDir.resolve("tickets.db")),
+                selfSettings, new RateTable(selfSettings), new HourlyPricing(new RateTable(selfSettings)), crypto, selfConfig);
+        rejected(() -> selfLot2.selfExit("SELFPAY12345", "SELF-PAY"), "fee due blocks self exit until paid");
+        selfLot2.submitTransfer("SELFPAY12345", "SELF-PAY", PaymentMethod.JAZZCASH, "SELFREF2026A", "");
+        selfLot2.submitTransfer("SELFBAD12345", "SELF-BAD", PaymentMethod.JAZZCASH, "SELFREF2026B", "");
+        Ticket outPending = selfLot2.selfExit("SELFPAY12345", "SELF-PAY");
+        Ticket outBad = selfLot2.selfExit("SELFBAD12345", "SELF-BAD");
+        check(outPending.getStatus() == Ticket.Status.CLOSED && outPending.isPending(), "exit after online payment keeps transfer pending");
+        check(selfLot2.getPendingPayments().size() == 2 && selfLot2.getStats().get("totalRevenue").equals(0.0),
+                "left-but-unverified transfers are queued for admin, not counted as revenue");
+        Ticket verified = selfLot2.approveTransfer("SELFPAY12345", "Admin");
+        check(verified.getFee() == 200 && !verified.isPending() && verified.getStatus() == Ticket.Status.CLOSED
+                && selfLot2.getStats().get("totalRevenue").equals(200.0), "admin verifies after the car has left");
+        Ticket unpaid = selfLot2.rejectTransfer("SELFBAD12345", "Not in statement");
+        check(unpaid.isUnpaidAfterExit() && unpaid.getFee() == 200 && selfLot2.getStats().get("unpaidExits").equals(1L)
+                && selfLot2.getStats().get("totalRevenue").equals(200.0), "rejected post-exit transfer is flagged as unpaid, not revenue");
         System.out.println("ALL ORBIT PARK FLOW TESTS PASSED");
     }
 }

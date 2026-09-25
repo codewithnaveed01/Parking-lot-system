@@ -7,7 +7,9 @@ import java.util.UUID;
 /** A booking and its entire entry, payment, and exit lifecycle. Instances are copied before persistence. */
 public class Ticket {
     public enum Status { RESERVED, PARKED, CLOSED, CANCELLED, EXPIRED }
-    public enum Channel { ONLINE, GATE }
+    /** ONLINE = reserve now / arrive within 30 min, SELF = booked online and parked immediately, GATE = walk-in issued by staff. */
+    public enum Channel { ONLINE, GATE, SELF }
+    public static final String SELF_SERVICE = "Self-service";
 
     private final String id;
     private final Vehicle vehicle;
@@ -50,7 +52,8 @@ public class Ticket {
             this.status = Status.PARKED;
             this.entryTime = createdAt;
         }
-        audit(createdAt, (channel == Channel.ONLINE ? "ONLINE_RESERVATION" : "GATE_ENTRY") + " bay=" + spotId + " rate=" + rate);
+        audit(createdAt, (channel == Channel.ONLINE ? "ONLINE_RESERVATION" : channel == Channel.SELF ? "SELF_PARK_NOW" : "GATE_ENTRY")
+                + " bay=" + spotId + " rate=" + rate);
     }
 
     /** Backwards-compatible constructor for existing file/SQL ticket records. */
@@ -121,12 +124,35 @@ public class Ticket {
     public void setAppliedRate(double rate) { appliedRate = rate; }
     public void setSpotId(String id) { audit(Instant.now(), "BAY_REASSIGNED " + spotId + " -> " + id); spotId = id; } // legacy single-level migration
 
-    public void checkIn(Instant now) {
+    public void checkIn(Instant now) { checkIn(now, false); }
+
+    /** Starts the meter. selfService = the driver checked in without staff. */
+    public void checkIn(Instant now, boolean selfService) {
         if (status != Status.RESERVED || !now.isBefore(expiresAt)) throw new IllegalStateException("Reservation has expired");
         status = Status.PARKED;
         entryTime = now; // Keep the original deadline: previously issued reservation receipts remain verifiable.
-        audit(now, "GATE_CHECK_IN bay=" + spotId);
+        audit(now, (selfService ? "SELF_CHECK_IN" : "GATE_CHECK_IN") + " bay=" + spotId);
     }
+
+    /**
+     * Unattended exit. Free stays close immediately; a submitted transfer lets the vehicle leave while the
+     * payment stays PENDING_VERIFICATION for the manager to reconcile later (never counted as revenue until then).
+     */
+    public void selfExit(Instant now, double due) {
+        if (status != Status.PARKED) throw new IllegalStateException("Vehicle is not parked");
+        if (isPending()) {
+            status = Status.CLOSED; exitTime = now; collectedBy = SELF_SERVICE;
+            note = "Left before verification; transfer awaiting manager check";
+            audit(now, "SELF_EXIT payment=PENDING " + paymentMethod + ":" + pendingRef + " amount=" + pendingFee);
+        } else if (due <= 0) {
+            status = Status.CLOSED; exitTime = now; fee = 0; paymentMethod = null; paymentRef = "FREE-" + id;
+            collectedBy = SELF_SERVICE; note = "15-minute grace period";
+            audit(now, "SELF_EXIT GRACE amount=0");
+        } else throw new IllegalStateException("Payment required before exit");
+    }
+
+    /** Closed after a self-service exit, but the manager rejected the transfer: the fee is still owed. */
+    public boolean isUnpaidAfterExit() { return status == Status.CLOSED && paymentMethod == null && paymentRef.startsWith("UNPAID-"); }
 
     public void submitTransfer(PaymentMethod method, String ref, double quotedFee, String senderLastFour, Instant now) {
         if (status != Status.PARKED || isPending()) throw new IllegalStateException("Ticket is not available for a new payment");
@@ -142,18 +168,26 @@ public class Ticket {
     public void rejectTransfer(String reason) {
         if (!isPending()) throw new IllegalStateException("No payment to reject");
         audit(Instant.now(), "TRANSFER_REJECTED " + paymentMethod + ":" + pendingRef + " amount=" + pendingFee + " reason=" + reason);
+        if (status == Status.CLOSED) {
+            // The vehicle already left: record the amount as owed, never as revenue.
+            fee = pendingFee; paymentRef = "UNPAID-" + id;
+            pendingRef = ""; pendingFee = 0; paymentMethod = null; paymentAccount = "";
+            note = "UNPAID after self-exit: " + reason;
+            return;
+        }
         pendingRef = ""; pendingFee = 0; pendingAt = null; paymentMethod = null; paymentAccount = "";
         note = reason;
     }
 
     public void approveTransfer(Instant now, String staff) {
-        if (status != Status.PARKED || !isPending()) throw new IllegalStateException("No pending payment");
+        if ((status != Status.PARKED && status != Status.CLOSED) || !isPending()) throw new IllegalStateException("No pending payment");
         fee = pendingFee;
         paymentRef = pendingRef;
         pendingRef = ""; pendingFee = 0;
         // Verification can take time. Preserve the moment the driver requested
         // payment so the waiting period is not added to their parking bill.
-        status = Status.CLOSED; exitTime = now; collectedBy = staff;
+        if (status == Status.PARKED) exitTime = now; // a self-service exit keeps its real exit time
+        status = Status.CLOSED; collectedBy = staff;
         note = "Transfer verified against merchant statement";
         audit(now, "TRANSFER_VERIFIED " + paymentMethod + ":" + paymentRef + " amount=" + fee + " by=" + staff + " cutoff=" + pendingAt);
     }

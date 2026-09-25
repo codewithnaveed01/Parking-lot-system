@@ -3,6 +3,7 @@ window.Orbit = (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const el = (tag, className = '', text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined && text !== null) node.textContent = String(text); return node; };
+  const channelName = c => ({ ONLINE: 'Online reservation', SELF: 'Online · park now', GATE: 'Gate walk-in' })[c] || c || '—';
   const money = value => 'PKR ' + Number(value || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 });
   const fmt = iso => iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   const duration = iso => { if (!iso) return '—'; const mins = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000)); return mins < 60 ? mins + 'm' : `${Math.floor(mins / 60)}h ${mins % 60}m`; };
@@ -40,9 +41,9 @@ window.Orbit = (() => {
   const badge = (text, status = text) => el('span', 'status-badge ' + status, String(text).replaceAll('_', ' '));
   const detailCard = t => {
     const box = el('div', 'ticket-card'); const heading = el('h4', '', `${labels[t.vehicleType] || t.vehicleType} · ${t.plate} · ${t.spotId}`);
-    box.append(heading, badge(t.paymentStatus === 'PENDING_VERIFICATION' ? 'Awaiting verification' : t.status, t.paymentStatus === 'PENDING_VERIFICATION' ? 'PENDING_VERIFICATION' : t.status));
+    box.append(heading, t.paymentStatus === 'UNPAID_AFTER_EXIT' ? badge('Unpaid', 'EXPIRED') : badge(t.paymentStatus === 'PENDING_VERIFICATION' ? 'Awaiting verification' : t.status, t.paymentStatus === 'PENDING_VERIFICATION' ? 'PENDING_VERIFICATION' : t.status));
     const grid = el('div', 'ticket-grid');
-    const rows = [['Booking code', t.id], ['Source', t.channel === 'ONLINE' ? 'Online reservation' : 'Gate walk-in'],
+    const rows = [['Booking code', t.id], ['Source', channelName(t.channel)],
       ['Vehicle', t.vehicleType], ['Created', fmt(t.createdAt)]];
     if (t.channel === 'ONLINE' && t.status === 'RESERVED') rows.push(['Check in before', fmt(t.expiresAt)]);
     if (t.entryTime) rows.push(['Checked in', fmt(t.entryTime)]);
@@ -103,7 +104,7 @@ window.Orbit = (() => {
     collectedBy: t.collectedBy, cashTendered: t.cashTendered, note: t.note, signature: t.signature });
   const receiptRows = t => {
     const rows = [['Booking', t.id], ['Plate', t.plate], ['Owner', t.owner], ['Vehicle', t.vehicleType],
-      ['Dedicated bay', t.spotId], ['Channel', t.channel === 'ONLINE' ? 'Online booking' : 'Gate entry'], ['Booked', fmt(t.createdAt)]];
+      ['Dedicated bay', t.spotId], ['Channel', channelName(t.channel)], ['Booked', fmt(t.createdAt)]];
     if (t.receiptType === 'RESERVATION') rows.push(['Arrive before', fmt(t.expiresAt)]);
     if (t.entryTime && t.receiptType !== 'RESERVATION') rows.push(['Check-in', fmt(t.entryTime)], ['Rate / hour', money(t.hourlyRate)]);
     if (t.receiptType === 'PAYMENT') {
@@ -197,5 +198,5 @@ window.Orbit = (() => {
       } catch (err) { if (err.name !== 'AbortError') handleError(err); }
     });
   }
-  return { $, el, money, fmt, duration, zoneIcon, labels, methodNames, methodLogo, request, toast, handleError, badge, detailCard, renderZoneMap, picker, destination, receiptFile, showReceipt };
+  return { $, el, money, fmt, duration, zoneIcon, labels, methodNames, methodLogo, request, toast, handleError, badge, channelName, detailCard, renderZoneMap, picker, destination, receiptFile, showReceipt };
 })();

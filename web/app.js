@@ -30,6 +30,13 @@
   };
   const loadMethods = async () => { methods = await request('/api/methods'); };
 
+  const exitButton = (t, label) => {
+    const button = el('button', 'btn btn-red', label); button.type = 'button';
+    button.addEventListener('click', async () => { if (!confirm(`Exit bay ${t.spotId} now?`)) return; busy(button, true);
+      try { const done = await request('/api/booking/exit', { id: t.id, plate: t.plate }); renderBooking(done); toast('Exit recorded. Have a safe trip!'); await loadOverview(); }
+      catch (error) { handleError(error); } finally { busy(button, false); } });
+    return button;
+  };
   function renderBooking(t) {
     current = t; selected = null;
     $('bookingResult').classList.remove('hidden'); $('bookingResult').replaceChildren(detailCard(t));
@@ -39,19 +46,25 @@
       const cancel = el('button', 'btn btn-plain danger-text', 'Cancel reservation'); cancel.type = 'button';
       cancel.addEventListener('click', async () => { if (!confirm(`Cancel reservation ${t.id}? Your bay will return to availability.`)) return;
         try { renderBooking(await request('/api/booking/cancel', { id: t.id, plate: t.plate })); toast('Reservation cancelled; the bay is free again.'); await loadOverview(); } catch (error) { handleError(error); } });
-      actions.append(cancel);
-      card.append(el('div', 'notice-box', 'Show this code at the gate within 30 minutes.'));
+      const arrive = el('button', 'btn btn-red', "I've arrived — Check in"); arrive.type = 'button';
+      arrive.addEventListener('click', async () => { busy(arrive, true);
+        try { renderBooking(await request('/api/booking/checkin', { id: t.id, plate: t.plate })); toast('Checked in. Meter started.'); await loadOverview(); }
+        catch (error) { handleError(error); } finally { busy(arrive, false); } });
+      actions.prepend(arrive); actions.append(cancel);
+      card.append(el('div', 'notice-box', 'Arrive within 30 minutes and check in here or at the gate.'));
     }
     if (t.status === 'PARKED') {
       if (t.paymentStatus === 'PENDING_VERIFICATION') {
-        card.append(el('div', 'warning-box', `Reference ${t.pendingRef} · ${money(t.pendingFee)} submitted via ${t.paymentMethod}. Awaiting admin verification.`));
+        card.append(el('div', 'warning-box', `Reference ${t.pendingRef} · ${money(t.pendingFee)} submitted via ${t.paymentMethod}. You can exit now.`));
+        actions.prepend(exitButton(t, 'Exit now'));
         const refresh = el('button', 'btn btn-dark', '↻ Check verification status'); refresh.type = 'button'; refresh.addEventListener('click', () => lookup(true)); actions.append(refresh);
       } else if (t.currentFee <= 0) {
         card.append(el('div', 'notice-box', 'Free period — no payment needed.'));
+        actions.prepend(exitButton(t, 'Exit now (free)'));
       } else {
         const checkout = el('div', 'payment-checkout'); checkout.append(el('h4', '', `Pay ${money(t.currentFee)} for your stay`));
         const enabled = methods.filter(m => m.id !== 'CASH' && m.enabled);
-        if (!enabled.length) checkout.append(el('div', 'notice-box', 'Please pay cash at the gate.'));
+        if (!enabled.length) checkout.append(el('div', 'notice-box', 'Online payment not set up. Please pay cash at the gate.'));
         else {
           const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'hidden');
           form.append(el('label', '', 'Transaction / transfer reference'));
@@ -63,7 +76,7 @@
           picker(choices, methods, choose, selected);
           form.addEventListener('submit', async event => { event.preventDefault(); if (!selected) return toast('Choose a transfer method first.', true);
             busy(submit, true);
-            try { const next = await request('/api/payments/submit', { id: t.id, plate: t.plate, method: selected.id, reference: ref.value, lastFour: last.value }); renderBooking(next); toast('Reference submitted. Awaiting real transfer verification — this is NOT a payment receipt yet.'); }
+            try { const next = await request('/api/payments/submit', { id: t.id, plate: t.plate, method: selected.id, reference: ref.value, lastFour: last.value }); renderBooking(next); toast('Payment reference submitted. You can exit now.'); }
             catch (error) { handleError(error); } finally { busy(submit, false); }
           });
           checkout.append(choices, dest, form);
@@ -71,6 +84,8 @@
         card.append(checkout);
       }
     }
+    if (t.status === 'CLOSED' && t.paymentStatus === 'PENDING_VERIFICATION') card.append(el('div', 'notice-box', 'Exited. Your online payment is being verified.'));
+    if (t.paymentStatus === 'UNPAID_AFTER_EXIT') card.append(el('div', 'warning-box', `Payment not received — ${money(t.fee)} is still due. ${t.note || ''}`));
     if (actions.childNodes.length) card.append(actions);
   }
   const lookup = async quiet => {
@@ -80,12 +95,18 @@
     catch (error) { if (!quiet) handleError(error); else if (error.status === 404) { current = null; $('bookingResult').classList.add('hidden'); } }
   };
 
+  const mode = () => (document.querySelector('input[name=bMode]:checked') || {}).value || 'reserve';
+  const syncMode = () => { $('bookBtn').textContent = mode() === 'park' ? 'Park now' : 'Reserve a spot'; };
+  document.querySelectorAll('input[name=bMode]').forEach(r => r.addEventListener('change', syncMode)); syncMode();
   $('bookingForm').addEventListener('submit', async event => {
     event.preventDefault(); const button = $('bookBtn'); busy(button, true);
-    try { const t = await request('/api/book', { type: $('bType').value, plate: $('bPlate').value, owner: $('bOwner').value });
+    const parkNow = mode() === 'park';
+    try { const t = await request(parkNow ? '/api/park-now' : '/api/book', { type: $('bType').value, plate: $('bPlate').value, owner: $('bOwner').value });
       $('lookupId').value = t.id; $('lookupPlate').value = t.plate;
-      renderBooking(t); showReceipt(t); $('bookingForm').reset(); toast(`Bay ${t.spotId} is yours for 30 minutes. Save your booking pass.`);
+      renderBooking(t); showReceipt(t); $('bookingForm').reset(); syncMode();
+      toast(parkNow ? `Parked at bay ${t.spotId}. Meter started.` : `Bay ${t.spotId} is held for 30 minutes.`);
       await loadOverview();
+      $('manage').scrollIntoView({ behavior: 'smooth' });
     } catch (error) { handleError(error); } finally { busy(button, false); }
   });
   $('lookupForm').addEventListener('submit', event => { event.preventDefault(); lookup(false); });

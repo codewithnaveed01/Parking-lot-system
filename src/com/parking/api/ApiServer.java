@@ -51,6 +51,18 @@ public class ApiServer {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.reserve(VehicleType.fromString(b.get("type")), b.get("plate"), b.get("owner")), true); break;
                 }
+                case "/api/park-now": {
+                    requirePost(method); Map<String, String> b = body(ex);
+                    result = ticketView(lot.parkNow(VehicleType.fromString(b.get("type")), b.get("plate"), b.get("owner")), true); break;
+                }
+                case "/api/booking/checkin": {
+                    requirePost(method); Map<String, String> b = body(ex);
+                    result = ticketView(lot.selfCheckIn(b.get("id"), b.get("plate")), true); break;
+                }
+                case "/api/booking/exit": {
+                    requirePost(method); Map<String, String> b = body(ex);
+                    result = ticketView(lot.selfExit(b.get("id"), b.get("plate")), true); break;
+                }
                 case "/api/booking/cancel": {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.cancelReservation(b.get("id"), b.get("plate"), "Cancelled by customer"), false); break;
@@ -116,6 +128,7 @@ public class ApiServer {
                 case "/api/admin/spots": requireGet(method); result = spotsView(true); break;
                 case "/api/admin/active": requireGet(method); result = ticketsView(lot.getActiveTickets()); break;
                 case "/api/admin/history": requireGet(method); result = ticketsView(lot.getHistory()); break;
+                case "/api/admin/pending": requireGet(method); result = ticketsView(lot.getPendingPayments()); break;
                 case "/api/admin/vehicles": requireGet(method); result = vehiclesView(); break;
                 case "/api/admin/ticket": requireGet(method); result = ticketView(lot.findTicket(query(ex).get("id"))
                         .orElseThrow(() -> new ParkingException("Ticket not found", 404)), true); break;
@@ -262,7 +275,7 @@ public class ApiServer {
         m.put("exitTime", t.getExitTime() == null ? null : t.getExitTime().toString());
         m.put("hourlyRate", t.getAppliedRate() >= 0 ? t.getAppliedRate() : lot.getRateTable().getRate(t.getVehicle().getType()));
         m.put("fee", t.getFee()); m.put("currentFee", lot.currentFee(t));
-        m.put("paymentStatus", t.isPending() ? "PENDING_VERIFICATION" : t.getStatus() == Ticket.Status.CLOSED ?
+        m.put("paymentStatus", t.isPending() ? "PENDING_VERIFICATION" : t.isUnpaidAfterExit() ? "UNPAID_AFTER_EXIT" : t.getStatus() == Ticket.Status.CLOSED ?
                 (t.getPaymentMethod() != null ? "PAID" : "NO_CHARGE") : t.getStatus() == Ticket.Status.PARKED ? "UNPAID" : "NOT_DUE");
         m.put("paymentMethod", t.getPaymentMethod() == null ? null : t.getPaymentMethod().name());
         m.put("paymentAccount", t.getPaymentAccount()); m.put("paymentRef", t.getPaymentRef());
@@ -272,7 +285,8 @@ public class ApiServer {
         m.put("cashChange", t.getPaymentMethod() == PaymentMethod.CASH ? Math.round((t.getCashTendered() - t.getFee()) * 100) / 100.0 : 0);
         m.put("note", t.getNote());
         String phase = requestedPhase == null ? t.getStatus() == Ticket.Status.RESERVED ? "RESERVATION" :
-                t.getStatus() == Ticket.Status.PARKED ? "ENTRY" : t.getStatus() == Ticket.Status.CLOSED ? "PAYMENT" : null : requestedPhase;
+                t.getStatus() == Ticket.Status.PARKED ? "ENTRY" : t.getStatus() == Ticket.Status.CLOSED
+                        ? (t.isPending() || t.isUnpaidAfterExit() ? "ENTRY" : "PAYMENT") : null : requestedPhase;
         m.put("receiptType", phase);
         if (signed && phase != null) m.put("signature", lot.sign(t, phase));
         return m;
