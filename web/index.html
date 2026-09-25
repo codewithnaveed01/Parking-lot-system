@@ -12,7 +12,7 @@
 <body>
   <header class="topbar"><div class="shell nav-shell">
     <a class="brand" href="/" aria-label="Salim Habib Parking home"><img class="brand-logo" src="img/sh-logo.png" alt="Salim Habib Parking logo" width="48" height="48"><span><b>Salim Habib <span class="brand-accent">Parking</span></b></span></a>
-    <nav class="nav" id="siteNav" aria-label="Main navigation"><a href="#zones">Zones</a><a href="#booking">Book</a><a href="#manage">Check in / Exit</a><a href="#map">Live spots</a><a class="nav-gate" href="/gate">Gate</a><a href="/admin">Admin</a></nav>
+    <nav class="nav" id="siteNav" aria-label="Main navigation"><a href="#zones">Zones</a><a href="#booking">Book</a><a href="#exit">Exit</a><a href="#manage">My booking</a><a href="#map">Live spots</a><a class="nav-gate" href="/gate">Gate</a><a href="/admin">Admin</a></nav>
     <div class="nav-actions"><button id="themeToggle" class="theme-toggle" type="button" title="Theme" aria-label="Switch light / dark theme">◐</button><a class="btn btn-red nav-cta" href="#booking">Reserve</a><button class="burger" id="burger" type="button" aria-controls="siteNav" aria-expanded="false" aria-label="Open menu"><span></span><span></span><span></span></button></div>
   </div></header>
 
@@ -39,7 +39,12 @@
         </div>
       </section>
 
-      <section class="section manage-section" id="manage"><div class="section-heading"><div><h2>Check in / Exit</h2></div></div>
+      <section class="section exit-section" id="exit"><div class="section-heading"><div><h2>Exit</h2></div></div>
+        <div class="panel exit-panel"><ol class="exit-steps"><li class="active" data-step="1"><span>1</span>Number plate</li><li data-step="2"><span>2</span>Pay</li><li data-step="3"><span>3</span>Exit</li></ol>
+          <form class="form-row lookup-form" id="exitForm" autocomplete="off"><div><label for="exitPlate">Vehicle number plate</label><input id="exitPlate" required maxlength="15" placeholder="e.g. LEA-4521" autocapitalize="characters"></div><button class="btn btn-red" type="submit" id="exitFind">Continue →</button></form>
+          <div id="exitResult" aria-live="polite"></div></div>
+      </section>
+      <section class="section manage-section" id="manage"><div class="section-heading"><div><h2>My booking</h2></div></div>
         <div class="manage-layout"><div class="panel"><h3>Find your booking</h3><form class="form-row lookup-form" id="lookupForm"><div><label for="lookupId">Booking code</label><input id="lookupId" required maxlength="16" placeholder="Booking code" autocapitalize="characters"></div><div><label for="lookupPlate">License plate</label><input id="lookupPlate" required maxlength="15" placeholder="e.g. LEA-4521" autocapitalize="characters"></div><button class="btn btn-dark" type="submit">Find booking</button></form><div id="bookingResult" class="hidden" aria-live="polite"></div></div>
           <div class="rates-panel"><div class="rates-head"><h3>Rates</h3></div><div id="ratesList"></div><small>PKR per hour</small></div></div>
       </section>

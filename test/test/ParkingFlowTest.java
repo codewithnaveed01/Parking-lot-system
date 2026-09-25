@@ -211,6 +211,20 @@ public class ParkingFlowTest {
         Ticket unpaid = selfLot2.rejectTransfer("SELFBAD12345", "Not in statement");
         check(unpaid.isUnpaidAfterExit() && unpaid.getFee() == 200 && selfLot2.getStats().get("unpaidExits").equals(1L)
                 && selfLot2.getStats().get("totalRevenue").equals(200.0), "rejected post-exit transfer is flagged as unpaid, not revenue");
+        Ticket plateCar = selfLot2.parkNow(VehicleType.TRUCK, "PLT-900", "Driver");
+        check(selfLot2.parkedByPlate("plt 900").getId().equals(plateCar.getId()), "exit lookup needs only the number plate");
+        check(selfLot2.exitByPlate("PLT-900").getStatus() == Ticket.Status.CLOSED, "plate-only free exit");
+        rejected(() -> selfLot2.parkedByPlate("PLT-900"), "exited plate is no longer found");
+        Ticket platePay = new Ticket("PLATEPAY1234", Vehicle.create(VehicleType.CAR, "PLT-PAY", "Payer"),
+                "C-07", Instant.now().minus(Duration.ofMinutes(70)), null, 0, null, "", "");
+        platePay.setAppliedRate(100); selfRepo.save(platePay);
+        ParkingLotService selfLot3 = new ParkingLotService("Orbit Park", new FileTicketRepository(selfDir.resolve("tickets.db")),
+                selfSettings, new RateTable(selfSettings), new HourlyPricing(new RateTable(selfSettings)), crypto, selfConfig);
+        rejected(() -> selfLot3.exitByPlate("PLT-PAY"), "plate exit with fee due needs payment");
+        rejected(() -> selfLot3.payAndExitByPlate("PLT-PAY", PaymentMethod.JAZZCASH, "x", ""), "bad transaction id keeps the car parked");
+        check(selfLot3.parkedByPlate("PLT-PAY").getStatus() == Ticket.Status.PARKED, "failed payment does not release the bay");
+        Ticket paidOut = selfLot3.payAndExitByPlate("PLT-PAY", PaymentMethod.JAZZCASH, "PLATEREF2026", "");
+        check(paidOut.getStatus() == Ticket.Status.CLOSED && paidOut.isPending() && paidOut.getPendingFee() == 200, "plate -> pay -> exit in one step");
         System.out.println("ALL ORBIT PARK FLOW TESTS PASSED");
     }
 }

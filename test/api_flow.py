@@ -66,8 +66,10 @@ def main():
                 except (OSError, TimeoutError): time.sleep(.1)
             else: raise AssertionError('Server did not start')
             check(data['totalSpots'] == 100 and data['freeSpots'] == 99, '100 bays incl. restored legacy active vehicle')
-            check(call('/api/park', {'plate': 'X-1'})[0] == 404 and call('/api/exit', {'plate': 'PAID-1', 'method': 'CASH'})[0] == 404,
-                  'legacy public self-entry/self-exit endpoints are unavailable')
+            check(call('/api/park', {'plate': 'X-1'})[0] == 404, 'legacy public self-entry endpoint is unavailable')
+            check(call('/api/exit', {'plate': 'PAID-1', 'method': 'CASH'})[0] == 409, 'plate exit refuses to release a vehicle with a fee due')
+            status, due = call('/api/exit/lookup', {'plate': 'paid 1'})
+            check(status == 200 and due['currentFee'] > 0 and 'owner' not in due and 'id' not in due, 'plate lookup shows the fee without exposing owner or booking code')
             check(call('/api/guard/park', {'type': 'CAR', 'plate': 'X-1'})[0] == 401, 'walk-in entry requires guard session')
             check(call('/api/admin/merchant')[0] == 401, 'merchant config requires admin session')
             check(call('/api/admin/login', {'username': 'admin', 'password': 'bad'})[0] == 401, 'wrong admin password rejected')

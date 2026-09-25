@@ -37,6 +37,46 @@
       catch (error) { handleError(error); } finally { busy(button, false); } });
     return button;
   };
+  /* Simple exit: number plate -> pay -> exit. */
+  const exitStep = n => document.querySelectorAll('.exit-steps li').forEach(li => li.classList.toggle('active', Number(li.dataset.step) <= n));
+  const exitDone = (box, t) => {
+    exitStep(3); box.replaceChildren();
+    const done = el('div', 'exit-done'); done.append(el('b', '', 'Exit complete ✓'), el('span', '', `${t.plate} · bay ${t.spotId}${t.fee > 0 || t.pendingFee > 0 ? ' · ' + money(t.fee || t.pendingFee) : ' · no charge'}`));
+    const receipt = el('button', 'btn btn-plain', 'View receipt'); receipt.type = 'button'; receipt.addEventListener('click', () => showReceipt(t));
+    done.append(receipt); box.append(done); $('exitPlate').value = ''; loadOverview();
+  };
+  const renderExit = info => {
+    const box = $('exitResult'); box.replaceChildren(); exitStep(2);
+    const summary = el('div', 'exit-summary');
+    [['Plate', info.plate], ['Bay', info.spotId], ['Parked since', fmt(info.entryTime)], ['Amount due', info.pending ? 'Paid online' : money(info.currentFee)]]
+      .forEach(([k, v]) => { const d = el('div'); d.append(el('span', '', k), el('strong', '', v)); summary.append(d); });
+    box.append(summary);
+    const leave = async (path, payload, button) => { busy(button, true);
+      try { exitDone(box, await request(path, payload)); toast('Have a safe trip!'); } catch (error) { handleError(error); } finally { busy(button, false); } };
+    if (info.pending || info.currentFee <= 0) {
+      exitStep(3);
+      const go = el('button', 'btn btn-red btn-wide', info.pending ? 'Exit now' : 'Exit now — free'); go.type = 'button';
+      go.addEventListener('click', () => leave('/api/exit', { plate: info.plate }, go)); box.append(go); return;
+    }
+    const enabled = methods.filter(m => m.id !== 'CASH' && m.enabled);
+    if (!enabled.length) { box.append(el('div', 'notice-box', 'Please pay cash at the gate.')); return; }
+    let chosen = null;
+    const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'hidden');
+    form.append(el('label', '', 'Transaction ID'));
+    const ref = el('input'); ref.required = true; ref.maxLength = 40; ref.placeholder = 'From your JazzCash / easypaisa / bank app'; form.append(ref);
+    const pay = el('button', 'btn btn-red btn-wide', `Pay ${money(info.currentFee)} & exit`); pay.type = 'submit'; form.append(pay);
+    const choose = m => { chosen = m; picker(choices, methods, choose, m.id); destination(dest, m, info.currentFee); form.classList.remove('hidden'); };
+    picker(choices, methods, choose, null);
+    form.addEventListener('submit', event => { event.preventDefault(); if (!chosen) return toast('Choose a payment method.', true);
+      leave('/api/exit/pay', { plate: info.plate, method: chosen.id, reference: ref.value, lastFour: '' }, pay); });
+    box.append(el('h4', 'exit-pay-title', 'Pay with'), choices, dest, form, el('small', 'muted small', 'Or pay cash at the gate.'));
+  };
+  $('exitForm').addEventListener('submit', async event => {
+    event.preventDefault(); const button = $('exitFind'); busy(button, true);
+    try { renderExit(await request('/api/exit/lookup', { plate: $('exitPlate').value })); }
+    catch (error) { $('exitResult').replaceChildren(); exitStep(1); handleError(error); } finally { busy(button, false); }
+  });
+
   function renderBooking(t) {
     current = t; selected = null;
     $('bookingResult').classList.remove('hidden'); $('bookingResult').replaceChildren(detailCard(t));

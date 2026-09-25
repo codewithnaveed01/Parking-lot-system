@@ -182,6 +182,32 @@ public class ParkingLotService {
         return updated;
     }
 
+    /** Plate-only exit: the vehicle currently parked with this number plate. */
+    public synchronized Ticket parkedByPlate(String plate) {
+        expireReservations();
+        String key = plate == null ? "" : plate.toUpperCase().replaceAll("[^A-Z0-9]", "");
+        if (key.length() < 2) throw new ParkingException("Enter the vehicle number plate");
+        Ticket t = activeByPlate.values().stream()
+                .filter(x -> x.getVehicle().getLicensePlate().replaceAll("[^A-Z0-9]", "").equals(key)).findFirst().orElse(null);
+        if (t == null) throw new ParkingException("No parked vehicle found with this number plate", 404);
+        if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("This vehicle has a reservation but has not checked in yet", 409);
+        return t;
+    }
+
+    /** Plate-only exit: free exit, or exit after an online transfer was already submitted. */
+    public synchronized Ticket exitByPlate(String plate) {
+        Ticket t = parkedByPlate(plate);
+        return selfExit(t.getId(), t.getVehicle().getLicensePlate());
+    }
+
+    /** Plate-only exit: submit the online payment and leave in one step. */
+    public synchronized Ticket payAndExitByPlate(String plate, PaymentMethod method, String reference, String lastFour) {
+        Ticket t = parkedByPlate(plate);
+        String p = t.getVehicle().getLicensePlate();
+        if (!t.isPending() && currentFee(t) > 0) submitTransfer(t.getId(), p, method, reference, lastFour);
+        return selfExit(t.getId(), p);
+    }
+
     /** Every transfer still awaiting a manager decision, including self-service exits. */
     public synchronized List<Ticket> getPendingPayments() {
         expireReservations();

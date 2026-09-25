@@ -63,6 +63,22 @@ public class ApiServer {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.selfExit(b.get("id"), b.get("plate")), true); break;
                 }
+                case "/api/exit/lookup": {
+                    requirePost(method); Ticket t = lot.parkedByPlate(body(ex).get("plate"));
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("plate", t.getVehicle().getLicensePlate()); m.put("vehicleType", t.getVehicle().getType().name());
+                    m.put("spotId", t.getSpotId()); m.put("entryTime", String.valueOf(t.getEntryTime()));
+                    m.put("hourlyRate", t.getAppliedRate()); m.put("currentFee", lot.currentFee(t)); m.put("pending", t.isPending());
+                    result = m; break;
+                }
+                case "/api/exit": {
+                    requirePost(method); result = ticketView(lot.exitByPlate(body(ex).get("plate")), true); break;
+                }
+                case "/api/exit/pay": {
+                    requirePost(method); Map<String, String> b = body(ex);
+                    result = ticketView(lot.payAndExitByPlate(b.get("plate"), PaymentMethod.fromString(b.get("method")),
+                            b.get("reference"), b.get("lastFour")), true); break;
+                }
                 case "/api/booking/cancel": {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.cancelReservation(b.get("id"), b.get("plate"), "Cancelled by customer"), false); break;
