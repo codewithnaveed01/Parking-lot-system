@@ -5,7 +5,8 @@ public enum VehicleType {
     MOTORCYCLE(1, "Motorcycle"),
     CAR(2, "Car"),
     VAN(3, "Van"),
-    TRUCK(4, "Truck");
+    TRUCK(4, "Truck"),
+    BUS(5, "Bus");
 
     private final int size;
     private final String label;

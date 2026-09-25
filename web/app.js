@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const { $, el, money, fmt, zoneIcon, labels, request, toast, handleError, detailCard, renderZoneMap, picker, destination, showReceipt } = Orbit;
-  const zoneOrder = ['CAR', 'MOTORCYCLE', 'VAN', 'TRUCK'];
+  const zoneOrder = ['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK', 'BUS'];
   let methods = [], current = null, selected = null;
   const busy = (button, on) => { button.disabled = on; button.dataset.busy = on ? '1' : '0'; };
 
@@ -15,12 +15,12 @@
     zoneOrder.forEach((type, idx) => {
       const values = stats.zones[type], card = el('article', 'zone-card');
       const top = el('div', 'zone-top'), icon = el('span', 'zone-icon'); icon.append(zoneIcon(type));
-      top.append(icon, el('span', 'zone-tag', `${String(idx + 1).padStart(2, '0')} / 04`));
-      card.append(top, el('h3', '', labels[type]), el('p', 'zone-sub', `${type === 'MOTORCYCLE' ? 'Compact shade' : type === 'TRUCK' ? 'Wide loading bays' : type === 'VAN' ? 'Extra room to arrive' : 'Everyday easy access'} · dedicated bays`));
+      top.append(icon);
+      card.append(top, el('h3', '', labels[type]));
       const count = el('div', 'zone-number'); count.append(el('strong', '', values.free), el('span', '', `of ${values.total} available`)); card.append(count);
       const track = el('div', 'zone-progress'); const bar = el('i'); bar.style.width = `${Math.max(0, Math.min(100, values.free / values.total * 100))}%`; track.append(bar); card.append(track);
-      const foot = el('div', 'zone-foot'); foot.append(el('span', '', `${values.reserved} held · ${values.occupied} in use`));
-      const link = el('a', '', 'Book this zone ↗'); link.href = '#booking'; link.addEventListener('click', () => { $('bType').value = type; });
+      const foot = el('div', 'zone-foot'); foot.append(el('span', '', `${values.reserved} held · ${values.occupied} parked`));
+      const link = el('a', '', 'Book →'); link.href = '#booking'; link.addEventListener('click', () => { $('bType').value = type; });
       foot.append(link); card.append(foot); $('zoneCards').append(card);
     });
   };
@@ -40,18 +40,18 @@
       cancel.addEventListener('click', async () => { if (!confirm(`Cancel reservation ${t.id}? Your bay will return to availability.`)) return;
         try { renderBooking(await request('/api/booking/cancel', { id: t.id, plate: t.plate })); toast('Reservation cancelled; the bay is free again.'); await loadOverview(); } catch (error) { handleError(error); } });
       actions.append(cancel);
-      card.append(el('div', 'notice-box', 'Bring this booking code to the gate before the arrival deadline. The guard will check in your vehicle and start your parking time.'));
+      card.append(el('div', 'notice-box', 'Show this code at the gate within 30 minutes.'));
     }
     if (t.status === 'PARKED') {
       if (t.paymentStatus === 'PENDING_VERIFICATION') {
-        card.append(el('div', 'warning-box', `Reference ${t.pendingRef} · ${money(t.pendingFee)} submitted via ${t.paymentMethod}. Your parking meter is paused while the admin verifies the real transfer. This is NOT paid yet, and the bay remains occupied until verified.`));
+        card.append(el('div', 'warning-box', `Reference ${t.pendingRef} · ${money(t.pendingFee)} submitted via ${t.paymentMethod}. Awaiting admin verification.`));
         const refresh = el('button', 'btn btn-dark', '↻ Check verification status'); refresh.type = 'button'; refresh.addEventListener('click', () => lookup(true)); actions.append(refresh);
       } else if (t.currentFee <= 0) {
-        card.append(el('div', 'notice-box', 'Within the free 15-minute period. To leave now, ask the gate guard to record a zero-charge exit. Digital payment is not needed.'));
+        card.append(el('div', 'notice-box', 'Free period — no payment needed.'));
       } else {
-        const checkout = el('div', 'payment-checkout'); checkout.append(el('h4', '', `Pay ${money(t.currentFee)} for your stay`), el('p', 'muted', 'Open your wallet/bank app, send the exact amount shown, then submit its real transaction reference. An admin checks the merchant statement before releasing your bay.'));
+        const checkout = el('div', 'payment-checkout'); checkout.append(el('h4', '', `Pay ${money(t.currentFee)} for your stay`));
         const enabled = methods.filter(m => m.id !== 'CASH' && m.enabled);
-        if (!enabled.length) checkout.append(el('div', 'notice-box', 'Online transfer is not configured yet. Please pay cash to the guard at the gate and collect your receipt.'));
+        if (!enabled.length) checkout.append(el('div', 'notice-box', 'Please pay cash at the gate.'));
         else {
           const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'hidden');
           form.append(el('label', '', 'Transaction / transfer reference'));
@@ -94,13 +94,13 @@
     if (!file) return;
     if (file.size > 20000) return toast('Ticket file is too large.', true);
     try { const saved = JSON.parse(await file.text());
-      if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.system !== 'Orbit Park') throw new Error('This is not an Orbit Park ticket JSON file.');
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved) || !['Salim Habib Parking','Orbit Park'].includes(saved.system)) throw new Error('This is not an Salim Habib Parking ticket JSON file.');
       const result = await request('/api/verify', saved);
       if (!result.valid) { out.append(el('strong', '', '✕ Ticket information or signature does not match our records.')); toast('Ticket could not be verified.', true); return; }
       out.append(el('strong', '', `✓ Genuine ${saved.receiptType.toLowerCase()} ticket · ${saved.id} · ${result.ticket.status.toLowerCase()} now. `));
       if (result.ticket.signature) { const view = el('button', 'btn btn-outline-white', 'View current pass'); view.type = 'button'; view.addEventListener('click', () => showReceipt(result.ticket)); out.append(view); }
       $('lookupId').value = result.ticket.id; $('lookupPlate').value = result.ticket.plate; renderBooking(result.ticket);
-      toast('Ticket signature verified against Orbit Park records.');
+      toast('Ticket signature verified against Salim Habib Parking records.');
     } catch (error) { handleError(error); }
   });
   Promise.all([loadOverview(), loadRates(), loadMethods()]).catch(handleError);

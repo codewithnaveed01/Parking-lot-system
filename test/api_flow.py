@@ -65,7 +65,7 @@ def main():
                     if status == 200: break
                 except (OSError, TimeoutError): time.sleep(.1)
             else: raise AssertionError('Server did not start')
-            check(data['totalSpots'] == 90 and data['freeSpots'] == 89, '90 bays incl. restored legacy active vehicle')
+            check(data['totalSpots'] == 100 and data['freeSpots'] == 99, '100 bays incl. restored legacy active vehicle')
             check(call('/api/park', {'plate': 'X-1'})[0] == 404 and call('/api/exit', {'plate': 'PAID-1', 'method': 'CASH'})[0] == 404,
                   'legacy public self-entry/self-exit endpoints are unavailable')
             check(call('/api/guard/park', {'type': 'CAR', 'plate': 'X-1'})[0] == 401, 'walk-in entry requires guard session')

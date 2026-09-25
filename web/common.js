@@ -1,4 +1,4 @@
-/* Orbit Park — shared, XSS-safe UI, network and signed receipt helpers. */
+/* Salim Habib Parking — shared, XSS-safe UI, network and signed receipt helpers. */
 window.Orbit = (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -6,7 +6,7 @@ window.Orbit = (() => {
   const money = value => 'PKR ' + Number(value || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 });
   const fmt = iso => iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   const duration = iso => { if (!iso) return '—'; const mins = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000)); return mins < 60 ? mins + 'm' : `${Math.floor(mins / 60)}h ${mins % 60}m`; };
-  const labels = { CAR: 'Cars', MOTORCYCLE: 'Bikes', VAN: 'Vans', TRUCK: 'Trucks' };
+  const labels = { CAR: 'Cars', MOTORCYCLE: 'Bikes', VAN: 'Vans', TRUCK: 'Trucks', BUS: 'Buses' };
   const zoneIcon = (type, cls = '') => { const image = el('img', cls); image.src = `img/${type === 'MOTORCYCLE' ? 'bike' : type.toLowerCase()}.svg`; image.alt = ''; return image; };
   const methodNames = { EASYPAISA: 'easypaisa', JAZZCASH: 'JazzCash', BANK: 'Bank transfer', CASH: 'Cash' };
   const methodLogo = m => m.id === 'EASYPAISA' ? 'img/easypaisa.png' : m.id === 'JAZZCASH' ? 'img/jazzcash.png' : m.bankName === 'MEEZAN' ? 'img/meezan.webp' : 'img/hbl.png';
@@ -53,6 +53,7 @@ window.Orbit = (() => {
     if (t.note && t.paymentStatus !== 'PAID') box.append(el('div', 'notice-box', t.note));
     return box;
   };
+  const topView = { CAR: 'car', MOTORCYCLE: 'bike', VAN: 'van', TRUCK: 'truck', BUS: 'bus' };
   const renderZoneMap = (mount, zones, onSpotClick) => {
     mount.replaceChildren();
     zones.forEach(zone => {
@@ -60,12 +61,18 @@ window.Orbit = (() => {
       const title = el('h3'); title.append(zoneIcon(zone.type), document.createTextNode(`${labels[zone.type]} · ${zone.total} bays`));
       head.append(title, el('small', '', `${zone.free} available`)); wrap.append(head);
       const grid = el('div', 'spot-grid');
-      zone.spots.forEach(spot => {
+      zone.spots.forEach(raw => {
+        const spot = Object.assign({}, raw, { status: raw.status === 'PARKED' ? 'OCCUPIED' : raw.status });
         const node = el(onSpotClick ? 'button' : 'div', 'spot ' + spot.status.toLowerCase());
         if (onSpotClick) { node.type = 'button'; node.disabled = spot.status === 'RESERVED' || spot.status === 'OCCUPIED'; node.addEventListener('click', () => onSpotClick(spot)); }
         node.title = `${spot.id}: ${spot.status.toLowerCase()}` + (spot.plate ? ` · ${spot.plate}` : '');
         node.setAttribute('aria-label', node.title);
-        node.append(el('span', '', spot.id), el('small', '', spot.status === 'OCCUPIED' ? 'In use' : spot.status === 'RESERVED' ? 'Held' : spot.status === 'BLOCKED' ? 'Closed' : 'Open'));
+        node.classList.add('bay-' + zone.type.toLowerCase());
+        if (spot.status === 'OCCUPIED' || spot.status === 'RESERVED') {
+          const car = el('img', 'bay-vehicle'); car.src = `img/${topView[zone.type] || 'car'}-top.svg`; car.alt = ''; car.draggable = false;
+          node.append(car);
+        }
+        node.append(el('span', 'bay-id', spot.id));
         grid.append(node);
       });
       wrap.append(grid); mount.append(wrap);
@@ -88,7 +95,7 @@ window.Orbit = (() => {
   };
 
   /* The JSON file is the customer's signed evidence for this specific phase. Never fake a QR code. */
-  const receiptFile = t => ({ system: 'Orbit Park', receiptType: t.receiptType,
+  const receiptFile = t => ({ system: 'Salim Habib Parking', receiptType: t.receiptType,
     id: t.id, plate: t.plate, owner: t.owner, vehicleType: t.vehicleType, spotId: t.spotId,
     channel: t.channel, createdAt: t.createdAt, expiresAt: t.expiresAt,
     entryTime: t.entryTime, exitTime: t.exitTime, pendingAt: t.pendingAt, hourlyRate: t.hourlyRate, fee: t.fee,
@@ -112,16 +119,16 @@ window.Orbit = (() => {
   };
   const receiptLabel = t => t.receiptType === 'RESERVATION' ? 'RESERVATION PASS' : t.receiptType === 'ENTRY' ? 'ENTRY TICKET' : t.paymentMethod ? 'PAYMENT RECEIPT' : 'NO-CHARGE EXIT RECEIPT';
   const renderReceipt = (mount, t) => {
-    mount.replaceChildren(); const head = el('div', 'receipt-head'); head.append(el('strong', '', 'ORBIT PARK'), el('small', '', receiptLabel(t))); mount.append(head);
+    mount.replaceChildren(); const head = el('div', 'receipt-head'); head.append(el('strong', '', 'SALIM HABIB PARKING'), el('small', '', receiptLabel(t))); mount.append(head);
     receiptRows(t).forEach(([label, value]) => { const row = el('div', 'receipt-row'); row.append(el('span', '', label), el('span', '', value)); mount.append(row); });
     if (t.receiptType === 'PAYMENT') { const total = el('div', 'receipt-row receipt-total'); total.append(el('span', '', t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'), el('span', '', money(t.fee))); mount.append(total); }
     if (t.signature) mount.append(el('div', 'receipt-sign', `HMAC-SHA256 signature: ${t.signature}`));
-    mount.append(el('p', 'receipt-note', 'Keep this pass. Thank you for choosing Orbit Park.'));
+    mount.append(el('p', 'receipt-note', 'Thank you — Salim Habib Parking'));
   };
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const receiptHtml = t => {
     const lines = receiptRows(t).map(([a, b]) => `<div class="row"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join('');
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Orbit Park ${esc(t.id)}</title><style>body{font-family:Arial,sans-serif;background:#eee;margin:0;padding:30px;color:#1b1b1b}.paper{width:min(400px,100%);box-sizing:border-box;background:#fff;margin:auto;padding:26px;border-top:7px solid #c80d2a;box-shadow:0 12px 35px #ccc}h1{font-size:22px;letter-spacing:4px;text-align:center;margin:7px 0}h2{color:#bc1027;text-align:center;font-size:12px;letter-spacing:2px;margin-bottom:20px}.row{display:flex;justify-content:space-between;gap:15px;border-bottom:1px dashed #ddd;padding:8px 0;font-size:12px}.row b{text-align:right;overflow-wrap:anywhere}.total{color:#bb0e28;font-size:17px;font-weight:800;margin-top:20px}.sig{font-size:9px;overflow-wrap:anywhere;color:#777;margin-top:22px}@media print{body{background:#fff;padding:0}.paper{box-shadow:none}}</style></head><body><div class="paper"><h1>ORBIT PARK</h1><h2>${esc(receiptLabel(t))}</h2>${lines}${t.receiptType === 'PAYMENT' ? `<div class="row total"><span>${t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'}</span><b>${esc(money(t.fee))}</b></div>` : ''}<div class="sig">HMAC-SHA256 signature: ${esc(t.signature)}</div></div></body></html>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Salim Habib Parking ${esc(t.id)}</title><style>body{font-family:Arial,sans-serif;background:#eee;margin:0;padding:30px;color:#1b1b1b}.paper{width:min(400px,100%);box-sizing:border-box;background:#fff;margin:auto;padding:26px;border-top:7px solid #c80d2a;box-shadow:0 12px 35px #ccc}h1{font-size:22px;letter-spacing:4px;text-align:center;margin:7px 0}h2{color:#bc1027;text-align:center;font-size:12px;letter-spacing:2px;margin-bottom:20px}.row{display:flex;justify-content:space-between;gap:15px;border-bottom:1px dashed #ddd;padding:8px 0;font-size:12px}.row b{text-align:right;overflow-wrap:anywhere}.total{color:#bb0e28;font-size:17px;font-weight:800;margin-top:20px}.sig{font-size:9px;overflow-wrap:anywhere;color:#777;margin-top:22px}@media print{body{background:#fff;padding:0}.paper{box-shadow:none}}</style></head><body><div class="paper"><h1>ORBIT PARK</h1><h2>${esc(receiptLabel(t))}</h2>${lines}${t.receiptType === 'PAYMENT' ? `<div class="row total"><span>${t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'}</span><b>${esc(money(t.fee))}</b></div>` : ''}<div class="sig">HMAC-SHA256 signature: ${esc(t.signature)}</div></div></body></html>`;
   };
   const saveBlob = (blob, name) => {
     if (!blob) throw new Error('Could not create image. Please try HTML or print instead.');
@@ -145,7 +152,7 @@ window.Orbit = (() => {
     const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas is not supported on this device'); context.scale(scale, scale);
     context.fillStyle = '#f1f1f1'; context.fillRect(0, 0, width, height); context.fillStyle = '#fff'; context.fillRect(22, 20, width - 44, height - 40);
     context.fillStyle = '#1b1b1b'; context.fillRect(22, 20, width - 44, 145); context.fillStyle = '#c80d2a'; context.fillRect(22, 20, 10, 145);
-    context.textAlign = 'center'; context.fillStyle = '#fff'; context.font = 'bold 38px Arial, sans-serif'; context.fillText('ORBIT PARK', width / 2, 81);
+    context.textAlign = 'center'; context.fillStyle = '#fff'; context.font = 'bold 34px Arial, sans-serif'; context.fillText('SALIM HABIB PARKING', width / 2, 81);
     context.fillStyle = '#ff6c81'; context.font = 'bold 17px Arial, sans-serif'; context.fillText(receiptLabel(t), width / 2, 122);
     let y = 213; context.textAlign = 'left';
     rows.forEach(([key, value]) => {
@@ -158,7 +165,7 @@ window.Orbit = (() => {
       context.strokeStyle = '#ddd'; context.setLineDash([4, 4]); context.beginPath(); context.moveTo(55, bottom); context.lineTo(width - 55, bottom); context.stroke(); context.setLineDash([]); y += rowHeight(value);
     });
     if (t.receiptType === 'PAYMENT') { context.fillStyle = '#c80d2a'; context.font = 'bold 23px Arial, sans-serif'; context.fillText(t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE', 55, y + 42); context.textAlign = 'right'; context.fillText(money(t.fee), width - 55, y + 42); context.textAlign = 'left'; y += 90; }
-    context.fillStyle = '#777'; context.font = '12px Arial, sans-serif'; context.fillText('Signed ticket · Verify with your saved JSON file at Orbit Park', 55, y + 30);
+    context.fillStyle = '#777'; context.font = '12px Arial, sans-serif'; context.fillText('Signed ticket · Verify with your saved JSON file at Salim Habib Parking', 55, y + 30);
     context.font = '10px monospace'; context.fillText('Signature: ' + (t.signature || '').slice(0, 90), 55, y + 51);
     return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create image')), 'image/png'));
   };
@@ -185,7 +192,7 @@ window.Orbit = (() => {
       if (!currentReceipt) return;
       try {
         const blob = await imageBlob(currentReceipt), file = new File([blob], `orbit-receipt-${currentReceipt.id}.png`, { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Orbit Park receipt ' + currentReceipt.id });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Salim Habib Parking receipt ' + currentReceipt.id });
         else { saveBlob(blob, file.name); toast('Sharing unavailable; receipt downloaded instead.'); }
       } catch (err) { if (err.name !== 'AbortError') handleError(err); }
     });

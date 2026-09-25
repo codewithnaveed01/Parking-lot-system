@@ -25,7 +25,7 @@ public class FileSettingsRepository implements SettingsRepository {
         try {
             if (file.getParent() != null) Files.createDirectories(file.getParent());
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            try (OutputStream out = Files.newOutputStream(tmp)) { properties.store(out, "Orbit Park settings"); }
+            try (OutputStream out = Files.newOutputStream(tmp)) { properties.store(out, "Salim Habib Parking settings"); }
             try { Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
             catch (AtomicMoveNotSupportedException e) { Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING); }
         } catch (IOException e) { throw new IllegalStateException("Could not save settings", e); }

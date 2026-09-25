@@ -21,7 +21,7 @@
   const stats = async () => {
     const data = await request('/api/stats'); $('gateFree').textContent = data.freeSpots; $('gateReserved').textContent = data.reservedSpots; $('gateOccupied').textContent = data.occupiedSpots;
     const mount = $('gateZoneCounts'); mount.replaceChildren();
-    ['CAR', 'MOTORCYCLE', 'VAN', 'TRUCK'].forEach(type => { const row = el('div'); row.append(el('span', '', labels[type]), el('strong', '', data.zones[type].free + ' / ' + data.zones[type].total + ' free')); mount.append(row); });
+    ['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK', 'BUS'].forEach(type => { const row = el('div'); row.append(el('span', '', labels[type]), el('strong', '', data.zones[type].free + ' / ' + data.zones[type].total + ' free')); mount.append(row); });
   };
   const loadQueue = async () => {
     const list = await G('/api/guard/active'), body = $('gateActiveTable').querySelector('tbody'); body.replaceChildren();
@@ -73,7 +73,7 @@
     const mount = $('gateMethods'), box = $('gateDestination'), form = $('gateTransferForm'); box.classList.add('hidden'); form.classList.add('hidden');
     const choose = method => { selected = method; picker(mount, methods, choose, selected.id); destination(box, method, t.currentFee); form.classList.remove('hidden'); };
     picker(mount, methods, choose, null);
-    if (!methods.some(m => m.enabled && m.id !== 'CASH')) mount.append(el('div', 'notice-box', 'No merchant transfer accounts are configured. Take cash with a receipt.'));
+    if (!methods.some(m => m.enabled && m.id !== 'CASH')) mount.append(el('div', 'notice-box', 'Online transfer not set up. Take cash.'));
   }
   const lookup = async quiet => {
     const q = $('gSearch').value.trim(); if (!q) { if (!quiet) toast('Enter a plate or booking code.', true); return; }

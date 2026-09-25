@@ -1,4 +1,4 @@
-/* Manager control room — payment verification, merchant configuration and complete records. */
+/* Admin panel — payment verification, merchant configuration and complete records. */
 (() => {
   'use strict';
   const { $, el, money, fmt, methodNames, request, toast, handleError, badge, renderZoneMap, showReceipt } = Orbit;
@@ -10,7 +10,7 @@
   $('logoutBtn').addEventListener('click', logout);
   $('adminLoginForm').addEventListener('submit', async event => {
     event.preventDefault(); try { const result = await request('/api/admin/login', { username: $('adminUser').value, password: $('adminPass').value });
-      token = result.token; sessionStorage.setItem(TOKEN_KEY, token); $('adminLoginForm').reset(); view(true); await boot(); toast('Welcome to the Orbit Park control room.'); }
+      token = result.token; sessionStorage.setItem(TOKEN_KEY, token); $('adminLoginForm').reset(); view(true); await boot(); toast('Welcome, admin.'); }
     catch (error) { fail(error); }
   });
 
@@ -55,12 +55,12 @@
   const loadPending = async () => {
     const tickets = (await A('/api/admin/active')).filter(t => t.paymentStatus === 'PENDING_VERIFICATION');
     $('pendingList').replaceChildren();
-    if (!tickets.length) { $('pendingList').append(el('div', 'empty-state', 'All caught up. No transfer references are awaiting verification.')); return; }
+    if (!tickets.length) { $('pendingList').append(el('div', 'empty-state', 'No pending transfers.')); return; }
     tickets.forEach(t => {
       const item = el('article', 'pending-item'), info = el('div'), sum = el('div', 'amount', money(t.pendingFee)), actions = el('div', 'pending-actions');
       info.append(el('strong', '', `${t.vehicleType} · ${t.plate} · ${t.spotId} · ${t.id}`),
         el('small', '', `${methodNames[t.paymentMethod]} · ref ${t.pendingRef} · submitted ${fmt(t.pendingAt)} · ${t.channel.toLowerCase()} booking`));
-      info.append(el('small', '', `Meter paused at submission. Match ${money(t.pendingFee)}, reference AND transfer time against your actual merchant statement. Reject an unreceived or later transfer.`));
+      info.append(el('small', '', `Amount: ${money(t.pendingFee)}`));
       const approve = el('button', 'btn btn-red', 'Verify & release'); approve.type = 'button';
       approve.addEventListener('click', async () => {
         if (!confirm(`Have you independently verified an ACTUAL ${methodNames[t.paymentMethod]} deposit of ${money(t.pendingFee)} with reference ${t.pendingRef} in the merchant account? Check the transfer occurred when submitted (${fmt(t.pendingAt)}), not hours later. Do not approve based on the customer's claim alone.`)) return;
@@ -95,7 +95,7 @@
     });
   };
   const loadMerchant = async () => {
-    const m = await A('/api/admin/merchant'); $('merchantName').value = m.accountName || 'Orbit Park';
+    const m = await A('/api/admin/merchant'); $('merchantName').value = m.accountName || 'Salim Habib Parking';
     $('merchantEp').value = m.easypaisa || ''; $('merchantJc').value = m.jazzcash || '';
     $('merchantBank').value = m.bankName || 'HBL'; $('merchantIban').value = m.bankIban || '';
   };
@@ -103,7 +103,7 @@
     event.preventDefault(); const button = $('merchantForm').querySelector('[type=submit]'); button.disabled = true;
     try { await A('/api/admin/merchant', { accountName: $('merchantName').value, easypaisa: $('merchantEp').value,
       jazzcash: $('merchantJc').value, bankName: $('merchantBank').value, bankIban: $('merchantIban').value });
-      toast('Merchant destinations saved. Verify they belong to Orbit Park before accepting transfers.'); }
+      toast('Merchant destinations saved. Verify they belong to Salim Habib Parking before accepting transfers.'); }
     catch (error) { fail(error); } finally { button.disabled = false; }
   });
   $('waiveForm').addEventListener('submit', async event => {

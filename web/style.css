@@ -1,4 +1,4 @@
-/* Orbit Park — red / black / white. Single-level, shaded outdoor parking. */
+/* Salim Habib Parking — red / black / white. Single-level, shaded outdoor parking. */
 :root{--bg:#f8f8f7;--surface:#fff;--surface-2:#f1f1f0;--ink:#191919;--muted:#696969;--line:#e6e5e3;--red:#ca102a;--red-deep:#a00a20;--red-wash:#fff0f2;--black:#191919;--shadow:0 18px 48px rgba(21,20,20,.07);--radius:18px;color-scheme:light}
 [data-theme="dark"]{--bg:#111112;--surface:#1b1b1d;--surface-2:#262629;--ink:#fafafa;--muted:#b2b2b4;--line:#343437;--red:#ed3150;--red-deep:#c91234;--red-wash:#391d25;--black:#111112;--shadow:0 18px 48px rgba(0,0,0,.24);color-scheme:dark}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:105px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,"Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}button,input,select,textarea{font:inherit}button,a{-webkit-tap-highlight-color:transparent}a{color:inherit}button{cursor:pointer}img{max-width:100%}.hidden,[hidden]{display:none!important}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.shell{width:min(1220px,calc(100% - 48px));margin:auto}.muted{color:var(--muted)}.small{font-size:.82rem}.red-period,.brand-accent{color:var(--red)}.required{color:var(--red)}
@@ -23,3 +23,76 @@
 /* Manager-only lifecycle trail on each ticket. */
 .detail-audit-title{font-size:.7rem;letter-spacing:.12em;color:var(--red);margin:20px 0 8px}
 .audit-events{white-space:pre-wrap;overflow-wrap:anywhere;font:600 .7rem/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:12px;max-height:210px;overflow:auto;margin:0}
+
+/* Salim Habib Parking branding */
+.brand img.brand-logo{width:48px;height:48px;border-radius:12px;background:#fff;padding:4px;object-fit:contain;box-shadow:0 0 0 1px rgba(0,0,0,.08)}
+.brand b{letter-spacing:-.03em}
+.nav-clock{font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap}
+.dev-credit{text-align:center;margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12);font-size:.85rem;font-weight:700;color:#ddd}
+.footer:not(:has(.footer-inner)) .dev-credit{margin-top:0;padding-top:0;border-top:0}
+.dev-credit .spidy{color:#e11d2e;font-weight:900;letter-spacing:.02em}
+@media (max-width:720px){.nav-clock{display:none}}
+.toast:not(.show){opacity:0;visibility:hidden}
+
+/* Parking bays: empty = painted empty bay, booked = top-view vehicle */
+.hero h1{font-size:clamp(2.3rem,4.2vw,3.7rem);letter-spacing:-.05em;line-height:1.05}
+.spot-grid{grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:6px}
+.spot{position:relative;height:auto;aspect-ratio:3/5;padding:4px 3px 14px;overflow:hidden;background:#3a3d42;border:2px solid #f3f3f3;border-top-color:transparent;border-radius:3px;color:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.spot-grid .spot.free,.spot-grid .spot.reserved,.spot-grid .spot.occupied{background:#3a3d42;border-color:#f3f3f3;border-top-color:transparent;color:#e9e9e9}
+.spot .bay-id{position:absolute;left:0;right:0;bottom:2px;text-align:center;font-size:.5rem;font-weight:800;letter-spacing:.02em;opacity:.8}
+.spot .bay-vehicle{display:block;max-width:82%;max-height:100%;width:auto;height:100%;object-fit:contain;margin:0 auto;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));pointer-events:none}
+.spot.bay-motorcycle .bay-vehicle{max-width:56%}
+.spot-grid .spot.reserved{border-color:#f0b43a;border-top-color:transparent}
+.spot-grid .spot.reserved .bay-vehicle{opacity:.55}
+.spot-grid .spot.reserved::after{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:#f0b43a}
+.spot-grid .spot.occupied{border-color:#ff5a6e;border-top-color:transparent}
+.spot-grid .spot.blocked{background:repeating-linear-gradient(45deg,#3a3d42 0 6px,#56595e 6px 12px);border-color:#8a8a8a;border-top-color:transparent;color:#bbb}
+.admin-map .spot:not(.occupied):hover{outline-offset:1px}
+.map-sections .map-zone .spot-grid{background:#2e3135;padding:8px;border-radius:8px}
+@media (max-width:560px){.spot-grid{grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:4px}}
+.legend-dot.free{background:#3a3d42;box-shadow:inset 0 0 0 2px #f3f3f3,0 0 0 1px #999}
+
+/* ===== Professional palette & contrast (v3) ===== */
+:root{--bg:#f3f4f6;--surface:#ffffff;--surface-2:#eef0f3;--ink:#0f1115;--muted:#4a5260;--line:#d9dde3;--red:#c8102e;--red-deep:#9e0b23;--red-wash:#fbe9ec;--black:#0f1115;--shadow:0 1px 2px rgba(15,17,21,.06),0 10px 28px rgba(15,17,21,.07)}
+[data-theme="dark"]{--bg:#0c0e12;--surface:#151920;--surface-2:#1e232c;--ink:#f2f4f7;--muted:#c3c9d2;--line:#2c323c;--red:#ef3b57;--red-deep:#c8102e;--red-wash:#3a1a22;--black:#0c0e12;--shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.35)}
+body{color:var(--ink);background:var(--bg)}
+.topbar{box-shadow:0 1px 0 var(--line)}
+.nav a{color:#374151}.nav a:hover{color:var(--red)}
+[data-theme="dark"] .nav a{color:#d1d5db}
+.btn-red{background:var(--red-deep);background:#c8102e;box-shadow:0 6px 16px rgba(200,16,46,.22)}
+.btn-red:hover:not(:disabled){background:#9e0b23}
+.btn-dark{background:#0f1115}.btn-dark:hover:not(:disabled){background:#262b33}
+[data-theme="dark"] .btn-dark{background:#f2f4f7;color:#0f1115}[data-theme="dark"] .btn-dark:hover:not(:disabled){background:#d7dbe1}
+.hero-overlay{background:linear-gradient(90deg,rgba(8,10,14,.88) 0%,rgba(8,10,14,.72) 32%,rgba(8,10,14,.28) 60%,rgba(8,10,14,0) 100%),linear-gradient(0deg,rgba(0,0,0,.35),transparent 40%)}
+.hero h1 em{color:#ff3d5a}
+.metric span,.mini-kpi span{color:#9e0b23;letter-spacing:.14em}
+[data-theme="dark"] .metric span,[data-theme="dark"] .mini-kpi span{color:#ff8295}
+.metric strong{color:var(--ink)}
+.section-heading h2{color:var(--ink)}
+.panel,.zone-card,.map-zone,.metrics{border-color:var(--line);box-shadow:var(--shadow)}
+input,select,textarea{border-color:#c9ced6;background:var(--surface)}
+[data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{border-color:#3a414c;background:#10141a}
+input::placeholder,textarea::placeholder{color:#7a828f}
+label{color:var(--ink)}
+.zone-cards{grid-template-columns:repeat(5,1fr);gap:14px}
+.zone-card{min-height:220px;padding:20px}
+.zone-card:first-child{background:#0f1115;border-color:#0f1115}
+.zone-card h3{color:inherit}
+.zone-number span,.zone-foot span{color:var(--muted)}
+.zone-card:first-child .zone-number span,.zone-card:first-child .zone-foot span{color:#c3c9d2}
+.process-panel,.verify-strip,.footer{background:#0f1115}
+.rates-panel{background:linear-gradient(160deg,#b10e29,#7e0a1d)}
+.legend{color:#374151}[data-theme="dark"] .legend{color:#d1d5db}
+.map-sections .map-zone:first-child{grid-column:1/-1}
+.map-zone header small{color:#374151}[data-theme="dark"] .map-zone header small{color:#c3c9d2}
+.map-sections .map-zone .spot-grid{background:#262a31}
+.spot-grid .spot.free,.spot-grid .spot.reserved,.spot-grid .spot.occupied,.spot-grid .spot{background:#343942}
+.spot .bay-id{color:#f2f4f7;opacity:.9}
+.status-badge{font-weight:800}
+.data-table th{color:#374151}[data-theme="dark"] .data-table th{color:#c3c9d2}
+.footer-inner>small,.dev-credit{color:#d1d5db}
+.dev-credit .spidy{color:#ff2a3d}
+@media (max-width:1100px){.zone-cards{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:720px){.zone-cards{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:460px){.zone-cards{grid-template-columns:1fr}}
+.zone-foot{gap:8px;flex-wrap:nowrap}.zone-foot span{white-space:nowrap;font-size:.72rem}.zone-foot a{white-space:nowrap}

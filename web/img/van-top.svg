@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 42 84" role="img" aria-label="Van (top view)">
+  <ellipse cx="21" cy="43" rx="19" ry="40" fill="#000" opacity=".18"/>
+  <rect x="3" y="13" width="3" height="11" rx="1.5" fill="#1a1a1a"/><rect x="36" y="13" width="3" height="11" rx="1.5" fill="#1a1a1a"/>
+  <rect x="3" y="60" width="3" height="11" rx="1.5" fill="#1a1a1a"/><rect x="36" y="60" width="3" height="11" rx="1.5" fill="#1a1a1a"/>
+  <path d="M6 9c0-5 5-7 15-7s15 2 15 7v70c0 2-1 3-3 3H9c-2 0-3-1-3-3z" fill="#f2f2f0" stroke="#9a9a96" stroke-width="1"/>
+  <rect x="9" y="3.5" width="5" height="2.5" rx="1.2" fill="#fff6c9"/><rect x="28" y="3.5" width="5" height="2.5" rx="1.2" fill="#fff6c9"/>
+  <path d="M8.5 12c4-2.5 21-2.5 25 0l-1.5 7h-22z" fill="#1d2733"/>
+  <rect x="3.5" y="15" width="3.5" height="3" rx="1" fill="#d8d8d4"/><rect x="35" y="15" width="3.5" height="3" rx="1" fill="#d8d8d4"/>
+  <rect x="10" y="21" width="22" height="57" rx="2" fill="#e4e4e1"/>
+  <path d="M13 28v44M21 28v44M29 28v44" stroke="#c9c9c5" stroke-width="1.2"/>
+  <rect x="10" y="44" width="22" height="2" fill="#d3132a"/>
+  <rect x="9" y="80" width="5" height="2" rx="1" fill="#b30f23"/><rect x="28" y="80" width="5" height="2" rx="1" fill="#b30f23"/>
+</svg>
