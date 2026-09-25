@@ -225,6 +225,31 @@ public class ParkingFlowTest {
         check(selfLot3.parkedByPlate("PLT-PAY").getStatus() == Ticket.Status.PARKED, "failed payment does not release the bay");
         Ticket paidOut = selfLot3.payAndExitByPlate("PLT-PAY", PaymentMethod.JAZZCASH, "PLATEREF2026", "");
         check(paidOut.getStatus() == Ticket.Status.CLOSED && paidOut.isPending() && paidOut.getPendingFee() == 200, "plate -> pay -> exit in one step");
+        // Receipt photo instead of TID, duplicate photos blocked, gate online payment, barrier opens.
+        selfLot3.setBarrier(new BarrierGate(null, null));
+        byte[] png = new byte[300]; png[0] = (byte) 0x89; png[1] = 'P'; png[2] = 'N'; png[3] = 'G'; png[10] = 7;
+        String photo = "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(png);
+        for (String plateNo : new String[]{"IMG-ONE", "IMG-TWO", "GATE-ON"}) {
+            Ticket old2 = new Ticket(("T" + plateNo.replace("-", "") + "0000000").substring(0, 12), Vehicle.create(VehicleType.CAR, plateNo, "Payer"),
+                    plateNo.equals("IMG-ONE") ? "C-08" : plateNo.equals("IMG-TWO") ? "C-09" : "C-10", Instant.now().minus(Duration.ofMinutes(70)), null, 0, null, "", "");
+            old2.setAppliedRate(100); selfRepo.save(old2);
+        }
+        ParkingLotService selfLot4 = new ParkingLotService("Orbit Park", new FileTicketRepository(selfDir.resolve("tickets.db")),
+                selfSettings, new RateTable(selfSettings), new HourlyPricing(new RateTable(selfSettings)), crypto, selfConfig);
+        selfLot4.setBarrier(new BarrierGate(null, null));
+        rejected(() -> selfLot4.payAndExitByPlate("IMG-ONE", PaymentMethod.JAZZCASH, "", "", null), "TID or receipt photo is required");
+        rejected(() -> ReceiptImage.fromDataUrl("data:image/png;base64,SGVsbG8gd29ybGQgdGhpcyBpcyBub3QgYW4gaW1hZ2UgYXQgYWxsIHJlYWxseSBub3QgYW4gaW1hZ2UgYXQgYWxsIHJlYWxseSBub3QgYW4gaW1hZ2UgYXQgYWxsIHJlYWxseSBub3Q="),
+                "non-image upload rejected");
+        Ticket byPhoto = selfLot4.payAndExitByPlate("IMG-ONE", PaymentMethod.JAZZCASH, "", "", ReceiptImage.fromDataUrl(photo));
+        check(byPhoto.getStatus() == Ticket.Status.CLOSED && byPhoto.getPendingRef().startsWith("IMG-") && selfLot4.receiptImage(byPhoto.getId()).isPresent(),
+                "receipt photo alone pays and exits; photo stored for the manager");
+        check(selfLot4.validSignature(byPhoto, "EXIT", selfLot4.sign(byPhoto, "EXIT")), "signed payment & exit receipt after paying online");
+        rejected(() -> selfLot4.payAndExitByPlate("IMG-TWO", PaymentMethod.JAZZCASH, "", "", ReceiptImage.fromDataUrl(photo)), "same receipt photo cannot pay twice");
+        check(selfLot4.parkedByPlate("IMG-TWO").getStatus() == Ticket.Status.PARKED, "rejected duplicate photo keeps the car parked");
+        Ticket gateOnline = selfLot4.gateOnlineExit("GATE-ON", PaymentMethod.JAZZCASH, "GATETID2026", null);
+        check(gateOnline.getStatus() == Ticket.Status.CLOSED && "GATETID2026".equals(gateOnline.getPendingRef()), "guard records online TID and releases");
+        check(selfLot4.getBarrier().recentEvents().size() == 2 && "GATE-ON".equals(selfLot4.getBarrier().recentEvents().get(0).get("plate")),
+                "barrier opens on every paid exit");
         System.out.println("ALL ORBIT PARK FLOW TESTS PASSED");
     }
 }

@@ -20,6 +20,20 @@ public class ParkingLotService {
     private final HourlyPricing pricing;
     private final Crypto crypto;
     private final PaymentConfig paymentConfig;
+    private ReceiptRepository receipts = new MemoryReceipts();
+    private BarrierGate barrier = BarrierGate.disabled();
+
+    /** Default in-memory receipt storage (tests); Main plugs in the file or PostgreSQL store. */
+    private static final class MemoryReceipts implements ReceiptRepository {
+        private final Map<String, Receipt> byTicket = new HashMap<>();
+        @Override public void save(Receipt r) { byTicket.put(r.ticketId(), r); }
+        @Override public Optional<Receipt> find(String id) { return Optional.ofNullable(byTicket.get(id)); }
+        @Override public boolean hashUsed(String sha) { return byTicket.values().stream().anyMatch(r -> r.sha256().equals(sha)); }
+    }
+    public void setReceiptRepository(ReceiptRepository receipts) { this.receipts = receipts; }
+    public void setBarrier(BarrierGate barrier) { this.barrier = barrier; }
+    public BarrierGate getBarrier() { return barrier; }
+    public Optional<ReceiptRepository.Receipt> receiptImage(String ticketId) { return receipts.find(ticketId); }
 
     public ParkingLotService(String name, TicketRepository repo, SettingsRepository settings,
                              RateTable rates, HourlyPricing pricing, Crypto crypto, PaymentConfig paymentConfig) {
@@ -164,7 +178,7 @@ public class ParkingLotService {
         if (!Double.isFinite(tendered) || tendered < due || tendered > 1_000_000 || (due == 0 && tendered != 0)
                 || Math.rint(tendered * 100) != tendered * 100)
             throw new ParkingException(due == 0 ? "This exit is free: record PKR 0 received" : "Cash received must cover the current fee (maximum PKR 1,000,000)");
-        Ticket updated = t.copy(); updated.cashExit(Instant.now(), due, tendered, staff); finish(t, updated);
+        Ticket updated = t.copy(); updated.cashExit(Instant.now(), due, tendered, staff); finish(t, updated); barrier.open(updated);
         return updated;
     }
 
@@ -178,7 +192,7 @@ public class ParkingLotService {
         double due = currentFee(t);
         if (!t.isPending() && due > 0)
             throw new ParkingException("Pay " + Math.round(due) + " PKR online first, or pay cash at the gate", 409);
-        Ticket updated = t.copy(); updated.selfExit(Instant.now(), due); finish(t, updated);
+        Ticket updated = t.copy(); updated.selfExit(Instant.now(), due); finish(t, updated); barrier.open(updated);
         return updated;
     }
 
@@ -202,9 +216,22 @@ public class ParkingLotService {
 
     /** Plate-only exit: submit the online payment and leave in one step. */
     public synchronized Ticket payAndExitByPlate(String plate, PaymentMethod method, String reference, String lastFour) {
-        Ticket t = parkedByPlate(plate);
+        return payAndExitByPlate(plate, method, reference, lastFour, null);
+    }
+    public synchronized Ticket payAndExitByPlate(String plate, PaymentMethod method, String reference, String lastFour, ReceiptImage image) {
+        return payAndLeave(parkedByPlate(plate), method, reference, lastFour, image);
+    }
+
+    /** Gate lane: the guard records an online payment (TID or receipt photo) and the barrier opens. */
+    public synchronized Ticket gateOnlineExit(String idOrPlate, PaymentMethod method, String reference, ReceiptImage image) {
+        Ticket t = gateLookup(idOrPlate);
+        if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("This vehicle is not parked", 409);
+        return payAndLeave(t, method, reference, "", image);
+    }
+
+    private Ticket payAndLeave(Ticket t, PaymentMethod method, String reference, String lastFour, ReceiptImage image) {
         String p = t.getVehicle().getLicensePlate();
-        if (!t.isPending() && currentFee(t) > 0) submitTransfer(t.getId(), p, method, reference, lastFour);
+        if (!t.isPending() && currentFee(t) > 0) submitTransfer(t.getId(), p, method, reference, lastFour, image);
         return selfExit(t.getId(), p);
     }
 
@@ -216,12 +243,29 @@ public class ParkingLotService {
     }
 
     public synchronized Ticket submitTransfer(String id, String plate, PaymentMethod method, String reference, String senderLastFour) {
+        return submitTransfer(id, plate, method, reference, senderLastFour, null);
+    }
+
+    /** The driver proves the online payment with the transaction ID (TID), a receipt screenshot, or both. */
+    public synchronized Ticket submitTransfer(String id, String plate, PaymentMethod method, String reference, String senderLastFour, ReceiptImage image) {
+        if (method == null) throw new ParkingException("Choose JazzCash, easypaisa or bank");
+        boolean noRef = reference == null || reference.trim().isEmpty();
+        if (noRef && image == null) throw new ParkingException("Enter the transaction ID (TID) or upload the payment receipt");
+        if (image != null && receipts.hashUsed(image.sha256()))
+            throw new ParkingException("This receipt image has already been used for another payment", 409);
+        if (noRef) reference = "IMG-" + image.sha256().substring(0, 12).toUpperCase();
+        Ticket updated = submitTransferChecked(id, plate, method, reference, senderLastFour);
+        if (image != null) receipts.save(new ReceiptRepository.Receipt(updated.getId(), image.contentType(), image.data(), image.sha256()));
+        return updated;
+    }
+
+    private Ticket submitTransferChecked(String id, String plate, PaymentMethod method, String reference, String senderLastFour) {
         Ticket t = requireActive(id, plate);
         if (t.getStatus() != Ticket.Status.PARKED) throw new ParkingException("Check in before paying", 409);
         if (t.isPending()) throw new ParkingException("This booking already has a transfer awaiting verification", 409);
         if (method == PaymentMethod.CASH || !paymentConfig.enabled(method)) throw new ParkingException("This digital payment destination is not available", 409);
         String ref = reference == null ? "" : reference.trim().toUpperCase();
-        if (!ref.matches("[A-Z0-9_\\-]{6,40}")) throw new ParkingException("Enter the transfer reference (6–40 letters/numbers)");
+        if (!ref.matches("[A-Z0-9_\\-]{6,40}")) throw new ParkingException("Enter the transaction ID (TID) — 6 to 40 letters/numbers");
         String lastFour = senderLastFour == null ? "" : senderLastFour.trim();
         if (!lastFour.isEmpty() && !lastFour.matches("\\d{4}")) throw new ParkingException("Sender account last four must be four digits");
         Instant submittedAt = Instant.now();
@@ -267,7 +311,7 @@ public class ParkingLotService {
         if (t.getStatus() != Ticket.Status.PARKED || t.isPending()) throw new ParkingException("Resolve check-in / pending transfer first", 409);
         String note = reason == null ? "" : reason.trim();
         if (note.length() < 5 || note.length() > 120) throw new ParkingException("Enter an audit reason (5–120 characters)");
-        Ticket updated = t.copy(); updated.waive(Instant.now(), note, staff); finish(t, updated);
+        Ticket updated = t.copy(); updated.waive(Instant.now(), note, staff); finish(t, updated); barrier.open(updated);
         return updated;
     }
 
@@ -369,6 +413,11 @@ public class ParkingLotService {
             case "ENTRY":
                 if (t.getEntryTime() == null) throw new ParkingException("Vehicle has not checked in");
                 return common + "|" + val(t.getEntryTime()) + "|" + t.getAppliedRate();
+            case "EXIT":
+                // Left the lot after paying online; the amount is received and awaiting the manager's statement check.
+                if (t.getStatus() != Ticket.Status.CLOSED || !t.isPending()) throw new ParkingException("No exit receipt for this ticket", 409);
+                return common + "|" + val(t.getEntryTime()) + "|" + val(t.getExitTime()) + "|" + t.getAppliedRate()
+                        + "|" + t.getPendingFee() + "|" + val(t.getPaymentMethod()) + "|" + t.getPendingRef() + "|" + val(t.getPendingAt());
             case "PAYMENT":
                 if (t.getStatus() != Ticket.Status.CLOSED) throw new ParkingException("No payment receipt yet", 409);
                 return common + "|" + val(t.getEntryTime()) + "|" + val(t.getExitTime()) + "|" + t.getAppliedRate()

@@ -130,6 +130,9 @@ public class Database {
             " spot_id VARCHAR(12) NOT NULL, entry_time TIMESTAMPTZ, exit_time TIMESTAMPTZ, fee NUMERIC(12,2) NOT NULL DEFAULT 0," +
             " payment_method VARCHAR(16), payment_account VARCHAR(40), payment_ref VARCHAR(40), applied_rate NUMERIC(12,2))",
             "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL)",
+            // Payment receipt screenshots (one per ticket); sha256 stops the same screenshot being reused.
+            "CREATE TABLE IF NOT EXISTS payment_receipts (ticket_id VARCHAR(16) PRIMARY KEY, content_type VARCHAR(32) NOT NULL," +
+            " sha256 CHAR(64) NOT NULL UNIQUE, data BYTEA NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
             "ALTER TABLE tickets ALTER COLUMN entry_time DROP NOT NULL",
             "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_status VARCHAR(16)",
             "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS channel VARCHAR(16)",

@@ -1,7 +1,7 @@
 /* Public online booking and externally verified transfer journey. */
 (() => {
   'use strict';
-  const { $, el, money, fmt, zoneIcon, labels, request, toast, handleError, detailCard, renderZoneMap, picker, destination, showReceipt } = Orbit;
+  const { $, el, money, fmt, zoneIcon, labels, request, toast, handleError, detailCard, renderZoneMap, picker, destination, showReceipt, onlinePayment, barrierOpen } = Orbit;
   const zoneOrder = ['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK', 'BUS'];
   let methods = [], current = null, selected = null;
   const busy = (button, on) => { button.disabled = on; button.dataset.busy = on ? '1' : '0'; };
@@ -33,7 +33,7 @@
   const exitButton = (t, label) => {
     const button = el('button', 'btn btn-red', label); button.type = 'button';
     button.addEventListener('click', async () => { if (!confirm(`Exit bay ${t.spotId} now?`)) return; busy(button, true);
-      try { const done = await request('/api/booking/exit', { id: t.id, plate: t.plate }); renderBooking(done); toast('Exit recorded. Have a safe trip!'); await loadOverview(); }
+      try { const done = await request('/api/booking/exit', { id: t.id, plate: t.plate }); renderBooking(done); loadOverview(); barrierOpen(done, () => showReceipt(done)); }
       catch (error) { handleError(error); } finally { busy(button, false); } });
     return button;
   };
@@ -41,9 +41,25 @@
   const exitStep = n => document.querySelectorAll('.exit-steps li').forEach(li => li.classList.toggle('active', Number(li.dataset.step) <= n));
   const exitDone = (box, t) => {
     exitStep(3); box.replaceChildren();
-    const done = el('div', 'exit-done'); done.append(el('b', '', 'Exit complete ✓'), el('span', '', `${t.plate} · bay ${t.spotId}${t.fee > 0 || t.pendingFee > 0 ? ' · ' + money(t.fee || t.pendingFee) : ' · no charge'}`));
+    const paid = t.fee || t.pendingFee || 0;
+    const done = el('div', 'exit-done'); done.append(el('b', '', 'Exit complete ✓'), el('span', '', `${t.plate} · bay ${t.spotId} · ${paid > 0 ? money(paid) + ' paid' : 'no charge'}`));
     const receipt = el('button', 'btn btn-plain', 'View receipt'); receipt.type = 'button'; receipt.addEventListener('click', () => showReceipt(t));
     done.append(receipt); box.append(done); $('exitPlate').value = ''; loadOverview();
+    barrierOpen(t, () => showReceipt(t));
+  };
+  /* Online (TID or receipt photo) or cash at the gate. */
+  const paymentChoice = (mount, { due, plate, onPaid }) => {
+    const tabs = el('div', 'pay-tabs'), body = el('div');
+    const online = el('button', 'pay-tab active', 'Pay online'), cash = el('button', 'pay-tab', 'Pay cash');
+    online.type = cash.type = 'button'; tabs.append(online, cash);
+    const showOnline = () => { online.classList.add('active'); cash.classList.remove('active');
+      onlinePayment(body, { methods, due, submitLabel: `Pay ${money(due)} & exit`, onSubmit: async proof => {
+        try { onPaid(await request('/api/exit/pay', { plate, method: proof.method, reference: proof.reference, lastFour: '', receipt: proof.receipt })); }
+        catch (error) { handleError(error); } } }); };
+    const showCash = () => { cash.classList.add('active'); online.classList.remove('active'); body.replaceChildren(
+      el('div', 'notice-box', `Pay ${money(due)} cash to the guard at the exit gate. The guard will open the barrier and give you the receipt.`)); };
+    online.addEventListener('click', showOnline); cash.addEventListener('click', showCash);
+    mount.append(tabs, body); showOnline();
   };
   const renderExit = info => {
     const box = $('exitResult'); box.replaceChildren(); exitStep(2);
@@ -51,25 +67,14 @@
     [['Plate', info.plate], ['Bay', info.spotId], ['Parked since', fmt(info.entryTime)], ['Amount due', info.pending ? 'Paid online' : money(info.currentFee)]]
       .forEach(([k, v]) => { const d = el('div'); d.append(el('span', '', k), el('strong', '', v)); summary.append(d); });
     box.append(summary);
-    const leave = async (path, payload, button) => { busy(button, true);
-      try { exitDone(box, await request(path, payload)); toast('Have a safe trip!'); } catch (error) { handleError(error); } finally { busy(button, false); } };
     if (info.pending || info.currentFee <= 0) {
       exitStep(3);
-      const go = el('button', 'btn btn-red btn-wide', info.pending ? 'Exit now' : 'Exit now — free'); go.type = 'button';
-      go.addEventListener('click', () => leave('/api/exit', { plate: info.plate }, go)); box.append(go); return;
+      const go = el('button', 'btn btn-red btn-wide', info.pending ? 'Open barrier & exit' : 'Exit now — free'); go.type = 'button';
+      go.addEventListener('click', async () => { busy(go, true);
+        try { exitDone(box, await request('/api/exit', { plate: info.plate })); } catch (error) { handleError(error); } finally { busy(go, false); } });
+      box.append(go); return;
     }
-    const enabled = methods.filter(m => m.id !== 'CASH' && m.enabled);
-    if (!enabled.length) { box.append(el('div', 'notice-box', 'Please pay cash at the gate.')); return; }
-    let chosen = null;
-    const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'hidden');
-    form.append(el('label', '', 'Transaction ID'));
-    const ref = el('input'); ref.required = true; ref.maxLength = 40; ref.placeholder = 'From your JazzCash / easypaisa / bank app'; form.append(ref);
-    const pay = el('button', 'btn btn-red btn-wide', `Pay ${money(info.currentFee)} & exit`); pay.type = 'submit'; form.append(pay);
-    const choose = m => { chosen = m; picker(choices, methods, choose, m.id); destination(dest, m, info.currentFee); form.classList.remove('hidden'); };
-    picker(choices, methods, choose, null);
-    form.addEventListener('submit', event => { event.preventDefault(); if (!chosen) return toast('Choose a payment method.', true);
-      leave('/api/exit/pay', { plate: info.plate, method: chosen.id, reference: ref.value, lastFour: '' }, pay); });
-    box.append(el('h4', 'exit-pay-title', 'Pay with'), choices, dest, form, el('small', 'muted small', 'Or pay cash at the gate.'));
+    paymentChoice(box, { due: info.currentFee, plate: info.plate, onPaid: t => exitDone(box, t) });
   };
   $('exitForm').addEventListener('submit', async event => {
     event.preventDefault(); const button = $('exitFind'); busy(button, true);
@@ -102,25 +107,8 @@
         card.append(el('div', 'notice-box', 'Free period — no payment needed.'));
         actions.prepend(exitButton(t, 'Exit now (free)'));
       } else {
-        const checkout = el('div', 'payment-checkout'); checkout.append(el('h4', '', `Pay ${money(t.currentFee)} for your stay`));
-        const enabled = methods.filter(m => m.id !== 'CASH' && m.enabled);
-        if (!enabled.length) checkout.append(el('div', 'notice-box', 'Online payment not set up. Please pay cash at the gate.'));
-        else {
-          const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'hidden');
-          form.append(el('label', '', 'Transaction / transfer reference'));
-          const ref = el('input'); ref.required = true; ref.maxLength = 40; ref.placeholder = 'From your wallet or bank app'; form.append(ref);
-          form.append(el('label', '', 'Sender account last 4 digits (optional)'));
-          const last = el('input'); last.maxLength = 4; last.inputMode = 'numeric'; last.placeholder = '1234'; last.pattern = '[0-9]{4}'; form.append(last);
-          const submit = el('button', 'btn btn-dark btn-wide', 'Submit transfer for verification →'); submit.type = 'submit'; form.append(submit);
-          const choose = method => { selected = method; picker(choices, methods, choose, selected.id); destination(dest, method, t.currentFee); form.classList.remove('hidden'); };
-          picker(choices, methods, choose, selected);
-          form.addEventListener('submit', async event => { event.preventDefault(); if (!selected) return toast('Choose a transfer method first.', true);
-            busy(submit, true);
-            try { const next = await request('/api/payments/submit', { id: t.id, plate: t.plate, method: selected.id, reference: ref.value, lastFour: last.value }); renderBooking(next); toast('Payment reference submitted. You can exit now.'); }
-            catch (error) { handleError(error); } finally { busy(submit, false); }
-          });
-          checkout.append(choices, dest, form);
-        }
+        const checkout = el('div', 'payment-checkout'); checkout.append(el('h4', '', `Pay ${money(t.currentFee)} and exit`));
+        paymentChoice(checkout, { due: t.currentFee, plate: t.plate, onPaid: done => { renderBooking(done); loadOverview(); barrierOpen(done, () => showReceipt(done)); } });
         card.append(checkout);
       }
     }

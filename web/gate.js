@@ -1,7 +1,7 @@
 /* Gate tablet: the only place where on-site cash can be recorded. */
 (() => {
   'use strict';
-  const { $, el, money, fmt, labels, request, toast, handleError, badge, detailCard, picker, destination, showReceipt } = Orbit;
+  const { $, el, money, fmt, labels, request, toast, handleError, badge, detailCard, showReceipt, onlinePayment, barrierOpen } = Orbit;
   const TOKEN_KEY = 'orbit-gate-token'; let token = sessionStorage.getItem(TOKEN_KEY); let methods = [], selected = null, current = null, tab = 'walkin';
   const G = (path, body) => request(path, body, token);
   const view = ready => { $('gateLogin').classList.toggle('hidden', ready); $('gateDash').classList.toggle('hidden', !ready); $('logoutBtn').classList.toggle('hidden', !ready); };
@@ -66,15 +66,19 @@
     const canPay = t.status === 'PARKED' && !t.pendingRef;
     $('cashForm').classList.toggle('hidden', !canPay);
     $('gateDigital').classList.toggle('hidden', !canPay || t.currentFee <= 0);
-    $('gatePending').classList.toggle('hidden', !t.pendingRef);
-    if (t.pendingRef) $('gatePending').textContent = `Transfer ${t.pendingRef} for ${money(t.pendingFee)} is awaiting admin verification. Do NOT take cash or release the vehicle yet. Refresh to see when the admin confirms it.`;
+    $('gatePending').classList.toggle('hidden', !(t.pendingRef && t.status === 'PARKED'));
+    if (t.pendingRef) $('gatePendingText').textContent = `Driver already paid ${money(t.pendingFee)} online (${t.paymentMethod} · ${t.pendingRef}). Open the barrier.`;
     if (!canPay) return;
     $('gReceived').value = Number(t.currentFee).toFixed(2); change();
-    const mount = $('gateMethods'), box = $('gateDestination'), form = $('gateTransferForm'); box.classList.add('hidden'); form.classList.add('hidden');
-    const choose = method => { selected = method; picker(mount, methods, choose, selected.id); destination(box, method, t.currentFee); form.classList.remove('hidden'); };
-    picker(mount, methods, choose, null);
-    if (!methods.some(m => m.enabled && m.id !== 'CASH')) mount.append(el('div', 'notice-box', 'Online transfer not set up. Take cash.'));
+    if (t.currentFee > 0) onlinePayment($('gateOnline'), { methods, due: t.currentFee, submitLabel: 'Payment received — open barrier', onSubmit: async proof => {
+      try { released(await G('/api/guard/online-exit', { q: t.id, method: proof.method, reference: proof.reference, receipt: proof.receipt }), 'Online payment recorded.'); }
+      catch (error) { fail(error); } } });
   }
+  const released = (t, message) => { renderTicket(t); toast(message); refresh().catch(() => {}); barrierOpen(t, () => showReceipt(t)); };
+  $('gatePendingExit').addEventListener('click', async () => {
+    if (!current || !current.pendingRef) return; const button = $('gatePendingExit'); button.disabled = true;
+    try { released(await G('/api/guard/online-exit', { q: current.id }), 'Barrier opened.'); } catch (error) { fail(error); } finally { button.disabled = false; }
+  });
   const lookup = async quiet => {
     const q = $('gSearch').value.trim(); if (!q) { if (!quiet) toast('Enter a plate or booking code.', true); return; }
     try { renderTicket(await G('/api/guard/lookup?q=' + encodeURIComponent(q))); if (!quiet) toast('Ticket found.'); }
@@ -86,21 +90,14 @@
     if (!confirm(`Have you received ${money($('gReceived').value)} cash from the driver? The current fee is ${money(current.currentFee)}.`)) return;
     const button = $('cashForm').querySelector('[type=submit]'); button.disabled = true;
     try { const t = await G('/api/guard/cash-exit', { q: current.id, received: $('gReceived').value });
-      renderTicket(t); showReceipt(t); toast(`${t.spotId} released. Cash ${money(t.fee)} recorded. Change ${money(t.cashChange)}.`); await refresh(); }
-    catch (error) { fail(error); } finally { button.disabled = false; }
-  });
-  $('gateTransferForm').addEventListener('submit', async event => {
-    event.preventDefault(); if (!current || !selected) return toast('Choose a digital method first.', true);
-    const button = $('gateTransferForm').querySelector('[type=submit]'); button.disabled = true;
-    try { const t = await request('/api/payments/submit', { id: current.id, plate: current.plate, method: selected.id, reference: $('gateRef').value, lastFour: $('gateLastFour').value });
-      renderTicket(t); toast('Sent to admin verification queue. Do not let the vehicle exit until confirmed.'); await refresh(); }
+      released(t, `Cash ${money(t.fee)} recorded. Change ${money(t.cashChange)}.`); }
     catch (error) { fail(error); } finally { button.disabled = false; }
   });
 
   let timer;
   const boot = async () => { const [session, paymentMethods] = await Promise.all([G('/api/guard/session'), request('/api/methods')]);
     $('operatorLabel').textContent = session.operator; methods = paymentMethods; await refresh(); clearInterval(timer);
-    timer = setInterval(() => { refresh().catch(() => {}); if (current && current.pendingRef) G('/api/guard/lookup?q=' + encodeURIComponent(current.id)).then(t => { if (t.status !== current.status || t.pendingRef !== current.pendingRef) { renderTicket(t); if (t.status === 'CLOSED') toast('Admin verified the transfer. Show the payment receipt and release the vehicle.'); } }).catch(() => {}); }, 12000);
+    timer = setInterval(() => { refresh().catch(() => {}); if (current && current.pendingRef) G('/api/guard/lookup?q=' + encodeURIComponent(current.id)).then(t => { if (t.status !== current.status || t.pendingRef !== current.pendingRef) { renderTicket(t); if (t.status === 'CLOSED') toast('Vehicle has exited.'); } }).catch(() => {}); }, 12000);
   };
   if (token) G('/api/guard/session').then(() => { view(true); boot().catch(fail); }).catch(() => logout()); else view(false);
 })();

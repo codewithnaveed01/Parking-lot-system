@@ -24,16 +24,19 @@ public class Main {
 
         TicketRepository tickets;
         SettingsRepository settings;
+        ReceiptRepository receipts;
         Crypto crypto;
         if (dbUrl != null) {
             Database db = new Database(dbUrl);
             tickets = new PostgresTicketRepository(db);
             settings = new PostgresSettingsRepository(db);
+            receipts = new PostgresReceiptRepository(db);
             crypto = databaseCrypto(settings);
             System.out.println("[storage] PostgreSQL");
         } else {
             tickets = new FileTicketRepository(data.resolve("tickets.db"));
             settings = new FileSettingsRepository(data.resolve("settings.properties"));
+            receipts = new FileReceiptRepository(data.resolve("receipts"));
             crypto = new Crypto(data.resolve("secret.key"));
             System.out.println("[storage] local files in ./data (set DATABASE_URL to use PostgreSQL)");
         }
@@ -41,6 +44,9 @@ public class Main {
         PaymentConfig paymentConfig = new PaymentConfig(settings);
         ParkingLotService lot = new ParkingLotService(APP_NAME, tickets, settings, rates,
                 new HourlyPricing(rates), crypto, paymentConfig);
+        lot.setReceiptRepository(receipts);
+        lot.setBarrier(BarrierGate.fromEnvironment());
+        System.out.println(lot.getBarrier().connected() ? "[barrier] controller: BARRIER_URL" : "[barrier] no controller (set BARRIER_URL to drive a physical barrier)");
         AdminAuthService admin = new AdminAuthService(env("ADMIN_USER", "admin"), adminPass);
         AdminAuthService guard = new AdminAuthService(env("GUARD_USER", "guard"), guardPass);
         ApiServer server = new ApiServer(lot, admin, guard, Paths.get("web"), port);

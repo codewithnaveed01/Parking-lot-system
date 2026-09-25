@@ -1,6 +1,7 @@
 package com.parking.api;
 
 import com.parking.model.*;
+import com.parking.repository.ReceiptRepository;
 import com.parking.service.*;
 import com.parking.util.Json;
 import com.sun.net.httpserver.*;
@@ -14,6 +15,8 @@ import java.util.concurrent.Executors;
 /** Same-origin public booking, attended gate, and manager APIs. No browser can record its own cash or approve its own transfer. */
 public class ApiServer {
     private static final int MAX_BODY = 8192;
+    /** Payment endpoints accept a receipt screenshot (≤1.5 MB image ≈ 2 MB as base64). */
+    private static final int MAX_UPLOAD_BODY = 2_200_000;
     private final ParkingLotService lot;
     private final AdminAuthService admin;
     private final AdminAuthService guard;
@@ -75,18 +78,18 @@ public class ApiServer {
                     requirePost(method); result = ticketView(lot.exitByPlate(body(ex).get("plate")), true); break;
                 }
                 case "/api/exit/pay": {
-                    requirePost(method); Map<String, String> b = body(ex);
-                    result = ticketView(lot.payAndExitByPlate(b.get("plate"), PaymentMethod.fromString(b.get("method")),
-                            b.get("reference"), b.get("lastFour")), true); break;
+                    requirePost(method); Map<String, String> b = uploadBody(ex);
+                    result = ticketView(lot.payAndExitByPlate(b.get("plate"), optionalMethod(b.get("method")),
+                            b.get("reference"), b.get("lastFour"), ReceiptImage.fromDataUrl(b.get("receipt"))), true); break;
                 }
                 case "/api/booking/cancel": {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.cancelReservation(b.get("id"), b.get("plate"), "Cancelled by customer"), false); break;
                 }
                 case "/api/payments/submit": {
-                    requirePost(method); Map<String, String> b = body(ex);
+                    requirePost(method); Map<String, String> b = uploadBody(ex);
                     result = ticketView(lot.submitTransfer(b.get("id"), b.get("plate"), PaymentMethod.fromString(b.get("method")),
-                            b.get("reference"), b.get("lastFour")), true); break;
+                            b.get("reference"), b.get("lastFour"), ReceiptImage.fromDataUrl(b.get("receipt"))), true); break;
                 }
                 case "/api/verify": {
                     requirePost(method); result = verify(body(ex)); break;
@@ -119,6 +122,11 @@ public class ApiServer {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.checkIn(b.get("id"), b.get("plate")), true); break;
                 }
+                case "/api/guard/online-exit": {
+                    requirePost(method); Map<String, String> b = uploadBody(ex);
+                    result = ticketView(lot.gateOnlineExit(b.get("q"), optionalMethod(b.get("method")),
+                            b.get("reference"), ReceiptImage.fromDataUrl(b.get("receipt"))), true); break;
+                }
                 case "/api/guard/cash-exit": {
                     requirePost(method); Map<String, String> b = body(ex);
                     result = ticketView(lot.cashExit(b.get("q"), amount(b.get("received")), operator), true); break;
@@ -136,6 +144,15 @@ public class ApiServer {
                 send(ex, 200, Json.encode(Map.of("token", admin.login(b.get("username"), b.get("password")), "role", "ADMIN"))); return; }
             String token = bearer(ex);
             if (!admin.isValid(token)) throw new ParkingException("Admin login required", 401);
+            if (path.equals("/api/admin/receipt")) {
+                requireGet(method);
+                ReceiptRepository.Receipt r = lot.receiptImage(text(query(ex).get("id")))
+                        .orElseThrow(() -> new ParkingException("No receipt image for this ticket", 404));
+                ex.getResponseHeaders().set("Content-Type", r.contentType()); security(ex);
+                ex.sendResponseHeaders(200, r.data().length);
+                try (OutputStream out = ex.getResponseBody()) { out.write(r.data()); }
+                return;
+            }
             Object result;
             switch (path) {
                 case "/api/admin/logout": requirePost(method); admin.logout(token); result = Map.of("ok", true); break;
@@ -144,7 +161,12 @@ public class ApiServer {
                 case "/api/admin/spots": requireGet(method); result = spotsView(true); break;
                 case "/api/admin/active": requireGet(method); result = ticketsView(lot.getActiveTickets()); break;
                 case "/api/admin/history": requireGet(method); result = ticketsView(lot.getHistory()); break;
-                case "/api/admin/pending": requireGet(method); result = ticketsView(lot.getPendingPayments()); break;
+                case "/api/admin/pending": {
+                    requireGet(method); List<Object> list = new ArrayList<>();
+                    for (Ticket t : lot.getPendingPayments()) { Map<String, Object> v = ticketView(t, true); v.put("hasReceiptImage", lot.receiptImage(t.getId()).isPresent()); list.add(v); }
+                    result = list; break;
+                }
+                case "/api/admin/barrier": requireGet(method); result = Map.of("connected", lot.getBarrier().connected(), "events", lot.getBarrier().recentEvents()); break;
                 case "/api/admin/vehicles": requireGet(method); result = vehiclesView(); break;
                 case "/api/admin/ticket": requireGet(method); result = ticketView(lot.findTicket(query(ex).get("id"))
                         .orElseThrow(() -> new ParkingException("Ticket not found", 404)), true); break;
@@ -203,14 +225,20 @@ public class ApiServer {
     }
     private static void requireGet(String m) { if (!m.equals("GET")) throw new ParkingException("Method not allowed", 405); }
     private static void requirePost(String m) { if (!m.equals("POST")) throw new ParkingException("Method not allowed", 405); }
+    /** Missing method is fine when the transfer was already submitted (e.g. from the driver's phone). */
+    private static PaymentMethod optionalMethod(String s) { return s == null || s.trim().isEmpty() ? null : PaymentMethod.fromString(s); }
     private static String text(Object value) { return value == null ? "" : String.valueOf(value); }
 
-    private Map<String, String> body(HttpExchange ex) throws IOException {
+    private Map<String, String> body(HttpExchange ex) throws IOException { return body(ex, MAX_BODY); }
+    private Map<String, String> uploadBody(HttpExchange ex) throws IOException { return body(ex, MAX_UPLOAD_BODY); }
+    private Map<String, String> body(HttpExchange ex, int max) throws IOException {
         String ct = ex.getRequestHeaders().getFirst("Content-Type");
         if (ct == null || !ct.toLowerCase(Locale.ROOT).startsWith("application/json")) throw new ParkingException("Send JSON", 415);
         try (InputStream in = ex.getRequestBody()) {
-            byte[] buf = in.readNBytes(MAX_BODY + 1);
-            if (buf.length > MAX_BODY) throw new ParkingException("Request too large", 413);
+            ByteArrayOutputStream acc = new ByteArrayOutputStream();
+            byte[] chunk = new byte[16384]; int n;
+            while ((n = in.read(chunk)) > 0) { acc.write(chunk, 0, n); if (acc.size() > max) throw new ParkingException(max > MAX_BODY ? "The receipt image is too large" : "Request too large", 413); }
+            byte[] buf = acc.toByteArray();
             String json = new String(buf, StandardCharsets.UTF_8).trim();
             if (!json.startsWith("{") || !json.endsWith("}")) throw new ParkingException("Invalid JSON object");
             return Json.parseFlat(json);
@@ -302,7 +330,7 @@ public class ApiServer {
         m.put("note", t.getNote());
         String phase = requestedPhase == null ? t.getStatus() == Ticket.Status.RESERVED ? "RESERVATION" :
                 t.getStatus() == Ticket.Status.PARKED ? "ENTRY" : t.getStatus() == Ticket.Status.CLOSED
-                        ? (t.isPending() || t.isUnpaidAfterExit() ? "ENTRY" : "PAYMENT") : null : requestedPhase;
+                        ? (t.isPending() ? "EXIT" : t.isUnpaidAfterExit() ? "ENTRY" : "PAYMENT") : null : requestedPhase;
         m.put("receiptType", phase);
         if (signed && phase != null) m.put("signature", lot.sign(t, phase));
         return m;
@@ -315,13 +343,18 @@ public class ApiServer {
     private Map<String, Object> verify(Map<String, String> b) {
         Ticket t = lot.publicTicket(b.get("id"), b.get("plate"));
         String phase = b.get("receiptType");
-        if (phase == null || !List.of("RESERVATION", "ENTRY", "PAYMENT").contains(phase)) throw new ParkingException("Choose a valid receipt type");
+        if (phase == null || !List.of("RESERVATION", "ENTRY", "EXIT", "PAYMENT").contains(phase)) throw new ParkingException("Choose a valid receipt type");
         Map<String, Object> stored = ticketView(t, true, phase);
         boolean fieldsMatch = true;
         for (String field : List.of("id", "plate", "owner", "vehicleType", "spotId", "channel", "createdAt"))
             fieldsMatch &= text(stored.get(field)).equals(b.get(field));
         if ("RESERVATION".equals(phase)) fieldsMatch &= text(stored.get("expiresAt")).equals(b.get("expiresAt"));
-        if ("ENTRY".equals(phase) || "PAYMENT".equals(phase)) {
+        if ("EXIT".equals(phase)) {
+            for (String field : List.of("exitTime", "paymentMethod", "pendingRef", "pendingAt"))
+                fieldsMatch &= text(stored.get(field)).equals(text(b.get(field)));
+            fieldsMatch &= sameNumber(stored.get("pendingFee"), b.get("pendingFee"));
+        }
+        if ("ENTRY".equals(phase) || "PAYMENT".equals(phase) || "EXIT".equals(phase)) {
             fieldsMatch &= text(stored.get("entryTime")).equals(b.get("entryTime"));
             fieldsMatch &= sameNumber(stored.get("hourlyRate"), b.get("hourlyRate"));
         }

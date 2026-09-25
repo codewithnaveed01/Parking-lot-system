@@ -54,6 +54,20 @@
     const unpaid = el('div'); unpaid.append(el('span', '', `Unpaid exits (${stats.unpaidExits})`), el('b', '', money(stats.unpaidAmount))); $('methodTotals').append(unpaid);
     const self = el('div'); self.append(el('span', '', 'Online / self-service'), el('b', '', stats.selfServiceBookings)); $('methodTotals').append(self);
   };
+  /* Receipt screenshots need the admin token, so they are fetched as a blob instead of a plain <img src>. */
+  const viewReceiptPhoto = async t => {
+    try {
+      const response = await fetch('/api/admin/receipt?id=' + encodeURIComponent(t.id), { headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) throw Object.assign(new Error(response.status === 404 ? 'No receipt photo for this ticket.' : 'Could not load the receipt photo.'), { status: response.status });
+      const url = URL.createObjectURL(await response.blob());
+      const overlay = el('div', 'photo-overlay'), card = el('div', 'photo-card'), img = el('img'), close = el('button', 'btn btn-plain', 'Close');
+      img.src = url; img.alt = 'Payment receipt uploaded for ' + t.plate; close.type = 'button';
+      card.append(el('strong', '', `${t.plate} · ${methodNames[t.paymentMethod] || t.paymentMethod} · ${money(t.pendingFee)} · ${t.pendingRef}`), img, close);
+      overlay.append(card); document.body.append(overlay);
+      const shut = () => { overlay.remove(); URL.revokeObjectURL(url); };
+      close.addEventListener('click', shut); overlay.addEventListener('click', event => { if (event.target === overlay) shut(); });
+    } catch (error) { fail(error); }
+  };
   const loadPending = async () => {
     const tickets = await A('/api/admin/pending');
     $('pendingList').replaceChildren();
@@ -61,7 +75,7 @@
     tickets.forEach(t => {
       const item = el('article', 'pending-item'), info = el('div'), sum = el('div', 'amount', money(t.pendingFee)), actions = el('div', 'pending-actions');
       info.append(el('strong', '', `${t.vehicleType} · ${t.plate} · ${t.spotId} · ${t.id}`),
-        el('small', '', `${methodNames[t.paymentMethod]} · ref ${t.pendingRef} · submitted ${fmt(t.pendingAt)} · ${t.status === 'CLOSED' ? 'vehicle already left (self-exit)' : 'vehicle still parked'}`));
+        el('small', '', `${methodNames[t.paymentMethod]} · ${t.pendingRef.startsWith('IMG-') ? 'receipt photo only' : 'TID ' + t.pendingRef}${t.hasReceiptImage && !t.pendingRef.startsWith('IMG-') ? ' + photo' : ''} · submitted ${fmt(t.pendingAt)} · ${t.status === 'CLOSED' ? 'vehicle has left' : 'vehicle still parked'}`));
       info.append(el('small', '', `Amount: ${money(t.pendingFee)}`));
       const approve = el('button', 'btn btn-red', t.status === 'CLOSED' ? 'Verify' : 'Verify & release'); approve.type = 'button';
       approve.addEventListener('click', async () => {
@@ -76,6 +90,7 @@
         catch (error) { fail(error); }
       });
       const details = el('button', 'btn btn-plain', 'Details'); details.type = 'button'; details.addEventListener('click', () => showDetails(t));
+      if (t.hasReceiptImage) { const photo = el('button', 'btn btn-dark', 'View receipt photo'); photo.type = 'button'; photo.addEventListener('click', () => viewReceiptPhoto(t)); actions.append(photo); }
       actions.append(details, approve, reject); item.append(info, sum, actions); $('pendingList').append(item);
     });
   };

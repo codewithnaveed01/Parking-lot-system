@@ -95,11 +95,67 @@ window.Orbit = (() => {
       el('b', '', m.destination), el('small', '', 'Account name: ' + m.accountName + ' · Verify the beneficiary in your own app before sending.'));
   };
 
+  /* Receipt photos are shrunk in the browser (max 1600 px JPEG) so uploads stay small on mobile data. */
+  const compressImage = file => new Promise((resolve, reject) => {
+    if (!file || !/^image\/(png|jpe?g|webp)$/i.test(file.type)) { reject(new Error('Choose a PNG, JPG or WebP image of the receipt.')); return; }
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight)), canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url); resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('This image could not be read.')); };
+    img.src = url;
+  });
+  /* Online payment: choose wallet/bank, then prove it with the TID or a receipt screenshot (either is enough). */
+  const onlinePayment = (mount, { methods, due, submitLabel, onSubmit }) => {
+    mount.replaceChildren();
+    if (!methods.some(m => m.id !== 'CASH' && m.enabled)) { mount.append(el('div', 'notice-box', 'Online payment is not set up yet. Please pay cash at the gate.')); return false; }
+    let chosen = null, receipt = null;
+    const choices = el('div', 'payment-picker'), dest = el('div', 'destination-box hidden'), form = el('form', 'pay-proof hidden');
+    form.noValidate = true;
+    form.append(el('label', '', 'Transaction ID (TID)'));
+    const ref = el('input'); ref.maxLength = 40; ref.placeholder = 'e.g. 012345678901'; ref.autocomplete = 'off'; ref.autocapitalize = 'characters'; form.append(ref);
+    form.append(el('div', 'or-divider', 'or'));
+    const upload = el('label', 'upload-box'), file = el('input'), uploadText = el('span', '', '+ Upload payment receipt (screenshot)'), preview = el('img', 'upload-preview hidden');
+    file.type = 'file'; file.accept = 'image/png,image/jpeg,image/webp'; preview.alt = 'Receipt preview';
+    upload.append(file, uploadText, preview); form.append(upload);
+    file.addEventListener('change', async () => {
+      const picked = file.files && file.files[0]; if (!picked) return;
+      try { receipt = await compressImage(picked); preview.src = receipt; preview.classList.remove('hidden'); upload.classList.add('has-file'); uploadText.textContent = '✓ Receipt attached — tap to change'; }
+      catch (error) { receipt = null; preview.classList.add('hidden'); upload.classList.remove('has-file'); uploadText.textContent = '+ Upload payment receipt (screenshot)'; toast(error.message, true); }
+    });
+    const submit = el('button', 'btn btn-red btn-wide', submitLabel); submit.type = 'submit'; form.append(submit);
+    const choose = m => { chosen = m; picker(choices, methods, choose, m.id); destination(dest, m, due); form.classList.remove('hidden'); };
+    picker(choices, methods, choose, null);
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!chosen) { toast('Choose JazzCash, easypaisa or bank first.', true); return; }
+      if (!ref.value.trim() && !receipt) { toast('Enter the TID or upload the receipt.', true); ref.focus(); return; }
+      submit.disabled = true;
+      try { await onSubmit({ method: chosen.id, reference: ref.value.trim(), receipt: receipt || '' }); }
+      finally { submit.disabled = false; }
+    });
+    mount.append(choices, dest, form); return true;
+  };
+  /* Exit barrier animation after a successful exit (a real boom gate is driven by the server via BARRIER_URL). */
+  const barrierOpen = (t, then) => {
+    const overlay = el('div', 'barrier-overlay'); overlay.setAttribute('role', 'status');
+    const scene = el('div', 'barrier-scene'); scene.append(el('div', 'barrier-post'), el('div', 'barrier-arm'), el('div', 'barrier-light'));
+    overlay.append(scene, el('b', '', 'Barrier open'), el('span', '', `${t.plate} · have a safe trip!`));
+    document.body.append(overlay);
+    requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('open')));
+    let finished = false;
+    const done = () => { if (finished) return; finished = true; overlay.remove(); if (then) then(); };
+    overlay.addEventListener('click', done); setTimeout(done, 2800);
+  };
+
   /* The JSON file is the customer's signed evidence for this specific phase. Never fake a QR code. */
   const receiptFile = t => ({ system: 'Salim Habib Parking', receiptType: t.receiptType,
     id: t.id, plate: t.plate, owner: t.owner, vehicleType: t.vehicleType, spotId: t.spotId,
     channel: t.channel, createdAt: t.createdAt, expiresAt: t.expiresAt,
-    entryTime: t.entryTime, exitTime: t.exitTime, pendingAt: t.pendingAt, hourlyRate: t.hourlyRate, fee: t.fee,
+    entryTime: t.entryTime, exitTime: t.exitTime, pendingAt: t.pendingAt, pendingRef: t.pendingRef, pendingFee: t.pendingFee, hourlyRate: t.hourlyRate, fee: t.fee,
     paymentMethod: t.paymentMethod, paymentAccount: t.paymentAccount, paymentRef: t.paymentRef,
     collectedBy: t.collectedBy, cashTendered: t.cashTendered, note: t.note, signature: t.signature });
   const receiptRows = t => {
@@ -107,6 +163,10 @@ window.Orbit = (() => {
       ['Dedicated bay', t.spotId], ['Channel', channelName(t.channel)], ['Booked', fmt(t.createdAt)]];
     if (t.receiptType === 'RESERVATION') rows.push(['Arrive before', fmt(t.expiresAt)]);
     if (t.entryTime && t.receiptType !== 'RESERVATION') rows.push(['Check-in', fmt(t.entryTime)], ['Rate / hour', money(t.hourlyRate)]);
+    if (t.receiptType === 'EXIT') {
+      rows.push(['Exit', fmt(t.exitTime)], ['Paid via', methodNames[t.paymentMethod] || t.paymentMethod], ['TID / receipt', t.pendingRef],
+        ['Paid at', fmt(t.pendingAt)], ['Payment', 'Received ✓ (statement check by manager)']);
+    }
     if (t.receiptType === 'PAYMENT') {
       rows.push(['Exit', fmt(t.exitTime)], ['Method', methodNames[t.paymentMethod] || 'No charge']);
       if (t.pendingAt && t.paymentMethod && t.paymentMethod !== 'CASH') rows.push(['Meter stopped', fmt(t.pendingAt)]);
@@ -118,18 +178,18 @@ window.Orbit = (() => {
     }
     return rows;
   };
-  const receiptLabel = t => t.receiptType === 'RESERVATION' ? 'RESERVATION PASS' : t.receiptType === 'ENTRY' ? 'ENTRY TICKET' : t.paymentMethod ? 'PAYMENT RECEIPT' : 'NO-CHARGE EXIT RECEIPT';
+  const receiptLabel = t => t.receiptType === 'RESERVATION' ? 'RESERVATION PASS' : t.receiptType === 'ENTRY' ? 'ENTRY TICKET' : t.receiptType === 'EXIT' ? 'PAYMENT & EXIT RECEIPT' : t.paymentMethod ? 'PAYMENT RECEIPT' : 'NO-CHARGE EXIT RECEIPT';
   const renderReceipt = (mount, t) => {
     mount.replaceChildren(); const head = el('div', 'receipt-head'); head.append(el('strong', '', 'SALIM HABIB PARKING'), el('small', '', receiptLabel(t))); mount.append(head);
     receiptRows(t).forEach(([label, value]) => { const row = el('div', 'receipt-row'); row.append(el('span', '', label), el('span', '', value)); mount.append(row); });
-    if (t.receiptType === 'PAYMENT') { const total = el('div', 'receipt-row receipt-total'); total.append(el('span', '', t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'), el('span', '', money(t.fee))); mount.append(total); }
+    if (t.receiptType === 'PAYMENT' || t.receiptType === 'EXIT') { const total = el('div', 'receipt-row receipt-total'); total.append(el('span', '', t.receiptType === 'EXIT' ? 'TOTAL PAID' : t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'), el('span', '', money(t.receiptType === 'EXIT' ? t.pendingFee : t.fee))); mount.append(total); }
     if (t.signature) mount.append(el('div', 'receipt-sign', `HMAC-SHA256 signature: ${t.signature}`));
     mount.append(el('p', 'receipt-note', 'Thank you — Salim Habib Parking'));
   };
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const receiptHtml = t => {
     const lines = receiptRows(t).map(([a, b]) => `<div class="row"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join('');
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Salim Habib Parking ${esc(t.id)}</title><style>body{font-family:Arial,sans-serif;background:#eee;margin:0;padding:30px;color:#1b1b1b}.paper{width:min(400px,100%);box-sizing:border-box;background:#fff;margin:auto;padding:26px;border-top:7px solid #c80d2a;box-shadow:0 12px 35px #ccc}h1{font-size:22px;letter-spacing:4px;text-align:center;margin:7px 0}h2{color:#bc1027;text-align:center;font-size:12px;letter-spacing:2px;margin-bottom:20px}.row{display:flex;justify-content:space-between;gap:15px;border-bottom:1px dashed #ddd;padding:8px 0;font-size:12px}.row b{text-align:right;overflow-wrap:anywhere}.total{color:#bb0e28;font-size:17px;font-weight:800;margin-top:20px}.sig{font-size:9px;overflow-wrap:anywhere;color:#777;margin-top:22px}@media print{body{background:#fff;padding:0}.paper{box-shadow:none}}</style></head><body><div class="paper"><h1>ORBIT PARK</h1><h2>${esc(receiptLabel(t))}</h2>${lines}${t.receiptType === 'PAYMENT' ? `<div class="row total"><span>${t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'}</span><b>${esc(money(t.fee))}</b></div>` : ''}<div class="sig">HMAC-SHA256 signature: ${esc(t.signature)}</div></div></body></html>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Salim Habib Parking ${esc(t.id)}</title><style>body{font-family:Arial,sans-serif;background:#eee;margin:0;padding:30px;color:#1b1b1b}.paper{width:min(400px,100%);box-sizing:border-box;background:#fff;margin:auto;padding:26px;border-top:7px solid #c80d2a;box-shadow:0 12px 35px #ccc}h1{font-size:22px;letter-spacing:4px;text-align:center;margin:7px 0}h2{color:#bc1027;text-align:center;font-size:12px;letter-spacing:2px;margin-bottom:20px}.row{display:flex;justify-content:space-between;gap:15px;border-bottom:1px dashed #ddd;padding:8px 0;font-size:12px}.row b{text-align:right;overflow-wrap:anywhere}.total{color:#bb0e28;font-size:17px;font-weight:800;margin-top:20px}.sig{font-size:9px;overflow-wrap:anywhere;color:#777;margin-top:22px}@media print{body{background:#fff;padding:0}.paper{box-shadow:none}}</style></head><body><div class="paper"><h1>SALIM HABIB PARKING</h1><h2>${esc(receiptLabel(t))}</h2>${lines}${t.receiptType === 'PAYMENT' || t.receiptType === 'EXIT' ? `<div class="row total"><span>${t.receiptType === 'EXIT' ? 'TOTAL PAID' : t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE'}</span><b>${esc(money(t.receiptType === 'EXIT' ? t.pendingFee : t.fee))}</b></div>` : ''}<div class="sig">HMAC-SHA256 signature: ${esc(t.signature)}</div></div></body></html>`;
   };
   const saveBlob = (blob, name) => {
     if (!blob) throw new Error('Could not create image. Please try HTML or print instead.');
@@ -148,7 +208,7 @@ window.Orbit = (() => {
       return lines.length ? lines : ['—'];
     };
     const rowHeight = value => Math.max(47, linesFor(value).length * 21 + 24);
-    const height = 230 + rows.reduce((sum, [, value]) => sum + rowHeight(value), 0) + (t.receiptType === 'PAYMENT' ? 100 : 0) + 100;
+    const height = 230 + rows.reduce((sum, [, value]) => sum + rowHeight(value), 0) + (t.receiptType === 'PAYMENT' || t.receiptType === 'EXIT' ? 100 : 0) + 100;
     const canvas = el('canvas'); canvas.width = width * scale; canvas.height = height * scale;
     const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas is not supported on this device'); context.scale(scale, scale);
     context.fillStyle = '#f1f1f1'; context.fillRect(0, 0, width, height); context.fillStyle = '#fff'; context.fillRect(22, 20, width - 44, height - 40);
@@ -165,7 +225,7 @@ window.Orbit = (() => {
       const bottom = y + rowHeight(value) - 33;
       context.strokeStyle = '#ddd'; context.setLineDash([4, 4]); context.beginPath(); context.moveTo(55, bottom); context.lineTo(width - 55, bottom); context.stroke(); context.setLineDash([]); y += rowHeight(value);
     });
-    if (t.receiptType === 'PAYMENT') { context.fillStyle = '#c80d2a'; context.font = 'bold 23px Arial, sans-serif'; context.fillText(t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE', 55, y + 42); context.textAlign = 'right'; context.fillText(money(t.fee), width - 55, y + 42); context.textAlign = 'left'; y += 90; }
+    if (t.receiptType === 'PAYMENT' || t.receiptType === 'EXIT') { context.fillStyle = '#c80d2a'; context.font = 'bold 23px Arial, sans-serif'; context.fillText(t.receiptType === 'EXIT' ? 'TOTAL PAID' : t.paymentMethod ? 'TOTAL COLLECTED' : 'TOTAL DUE', 55, y + 42); context.textAlign = 'right'; context.fillText(money(t.receiptType === 'EXIT' ? t.pendingFee : t.fee), width - 55, y + 42); context.textAlign = 'left'; y += 90; }
     context.fillStyle = '#777'; context.font = '12px Arial, sans-serif'; context.fillText('Signed ticket · Verify with your saved JSON file at Salim Habib Parking', 55, y + 30);
     context.font = '10px monospace'; context.fillText('Signature: ' + (t.signature || '').slice(0, 90), 55, y + 51);
     return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create image')), 'image/png'));
@@ -198,5 +258,5 @@ window.Orbit = (() => {
       } catch (err) { if (err.name !== 'AbortError') handleError(err); }
     });
   }
-  return { $, el, money, fmt, duration, zoneIcon, labels, methodNames, methodLogo, request, toast, handleError, badge, channelName, detailCard, renderZoneMap, picker, destination, receiptFile, showReceipt };
+  return { $, el, money, fmt, duration, zoneIcon, labels, methodNames, methodLogo, request, toast, handleError, badge, channelName, onlinePayment, barrierOpen, detailCard, renderZoneMap, picker, destination, receiptFile, showReceipt };
 })();

@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS tickets (
   note            TEXT,
   audit_trail     TEXT
 );
+-- Payment receipt screenshots (online payments proven by photo instead of / as well as the TID).
+CREATE TABLE IF NOT EXISTS payment_receipts (
+  ticket_id    VARCHAR(16) PRIMARY KEY,
+  content_type VARCHAR(32) NOT NULL,
+  sha256       CHAR(64)    NOT NULL UNIQUE,
+  data         BYTEA       NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_tickets_exit ON tickets(exit_time);
 CREATE INDEX IF NOT EXISTS idx_tickets_vehicle_type ON tickets(vehicle_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orbit_active_plate ON tickets(plate)   WHERE exit_time IS NULL;
