@@ -7,6 +7,12 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+-- Hourly rate for every category (existing admin-set values are kept)
+INSERT INTO settings (key, value) VALUES
+  ('rate.MOTORCYCLE', '50.0'), ('rate.CAR', '100.0'), ('rate.VAN', '150.0'),
+  ('rate.TRUCK', '250.0'), ('rate.BUS', '300.0')
+ON CONFLICT (key) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS vehicle_types (
   code        VARCHAR(16) PRIMARY KEY,           -- MOTORCYCLE, CAR, VAN, TRUCK, BUS
   label       VARCHAR(40) NOT NULL,
