@@ -47,19 +47,13 @@
     done.append(receipt); box.append(done); $('exitPlate').value = ''; loadOverview();
     barrierOpen(t, () => showReceipt(t));
   };
-  /* Online (TID or receipt photo) or cash at the gate. */
+  /* Self exit is online only (TID or receipt photo). Cash is taken only by the guard at the barrier. */
   const paymentChoice = (mount, { due, plate, onPaid }) => {
-    const tabs = el('div', 'pay-tabs'), body = el('div');
-    const online = el('button', 'pay-tab active', 'Pay online'), cash = el('button', 'pay-tab', 'Pay cash');
-    online.type = cash.type = 'button'; tabs.append(online, cash);
-    const showOnline = () => { online.classList.add('active'); cash.classList.remove('active');
-      onlinePayment(body, { methods, due, submitLabel: `Pay ${money(due)} & exit`, onSubmit: async proof => {
-        try { onPaid(await request('/api/exit/pay', { plate, method: proof.method, reference: proof.reference, lastFour: '', receipt: proof.receipt })); }
-        catch (error) { handleError(error); } } }); };
-    const showCash = () => { cash.classList.add('active'); online.classList.remove('active'); body.replaceChildren(
-      el('div', 'notice-box', `Pay ${money(due)} cash to the guard at the exit gate. The guard will open the barrier and give you the receipt.`)); };
-    online.addEventListener('click', showOnline); cash.addEventListener('click', showCash);
-    mount.append(tabs, body); showOnline();
+    const body = el('div'); mount.append(body);
+    const ready = onlinePayment(body, { methods, due, submitLabel: `Pay ${money(due)} & exit`, onSubmit: async proof => {
+      try { onPaid(await request('/api/exit/pay', { plate, method: proof.method, reference: proof.reference, lastFour: '', receipt: proof.receipt })); }
+      catch (error) { handleError(error); } } });
+    if (!ready) body.replaceChildren(el('div', 'notice-box', 'Online payment is not available right now. Please pay at the guard room at the barrier.'));
   };
   const renderExit = info => {
     const box = $('exitResult'); box.replaceChildren(); exitStep(2);
