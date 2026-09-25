@@ -53,6 +53,7 @@ window.Orbit = (() => {
     if (t.note && t.paymentStatus !== 'PAID') box.append(el('div', 'notice-box', t.note));
     return box;
   };
+  const topView = { CAR: 'car', MOTORCYCLE: 'bike', VAN: 'van', TRUCK: 'truck' };
   const renderZoneMap = (mount, zones, onSpotClick) => {
     mount.replaceChildren();
     zones.forEach(zone => {
@@ -60,12 +61,18 @@ window.Orbit = (() => {
       const title = el('h3'); title.append(zoneIcon(zone.type), document.createTextNode(`${labels[zone.type]} · ${zone.total} bays`));
       head.append(title, el('small', '', `${zone.free} available`)); wrap.append(head);
       const grid = el('div', 'spot-grid');
-      zone.spots.forEach(spot => {
+      zone.spots.forEach(raw => {
+        const spot = Object.assign({}, raw, { status: raw.status === 'PARKED' ? 'OCCUPIED' : raw.status });
         const node = el(onSpotClick ? 'button' : 'div', 'spot ' + spot.status.toLowerCase());
         if (onSpotClick) { node.type = 'button'; node.disabled = spot.status === 'RESERVED' || spot.status === 'OCCUPIED'; node.addEventListener('click', () => onSpotClick(spot)); }
         node.title = `${spot.id}: ${spot.status.toLowerCase()}` + (spot.plate ? ` · ${spot.plate}` : '');
         node.setAttribute('aria-label', node.title);
-        node.append(el('span', '', spot.id), el('small', '', spot.status === 'OCCUPIED' ? 'In use' : spot.status === 'RESERVED' ? 'Held' : spot.status === 'BLOCKED' ? 'Closed' : 'Open'));
+        node.classList.add('bay-' + zone.type.toLowerCase());
+        if (spot.status === 'OCCUPIED' || spot.status === 'RESERVED') {
+          const car = el('img', 'bay-vehicle'); car.src = `img/${topView[zone.type] || 'car'}-top.svg`; car.alt = ''; car.draggable = false;
+          node.append(car);
+        }
+        node.append(el('span', 'bay-id', spot.id));
         grid.append(node);
       });
       wrap.append(grid); mount.append(wrap);
