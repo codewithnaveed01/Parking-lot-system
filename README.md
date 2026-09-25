@@ -10,15 +10,15 @@ A Java 17 + vanilla HTML/CSS/JS parking system with three **separate** experienc
 | `/gate` | Gate staff on a tablet | Check in online arrivals; create manual walk-in tickets; look up plates; take and **record real cash** (including change); offer a configured transfer option but never approve it. |
 | `/admin` | Manager | All bookings and vehicle history, digital-payment verification/rejection, revenue by method, CSV exports, receipt reprints, manager-only lifecycle/payment audit for each ticket, zone/bay maintenance blocks, rates, merchant destinations, and audited no-charge releases. |
 
-The visual identity is **red, black, and white**. The hero is a locally stored, generated, realistic rendering of a **shaded outdoor lot** with separate bike, car, van, and truck areas. No multi-storey/floor system is in use.
+The visual identity is **red, black, and white**. The hero is a locally stored, generated, realistic rendering of a **shaded outdoor lot** with separate bike, car, van, truck and bus areas. No multi-storey/floor system is in use.
 
 ## Capacity and booking rules
 
-**Exactly 90 bays, fixed by category:** Bikes `B-01…B-20` (20), cars `C-01…C-40` (40), vans `V-01…V-20` (20), trucks `T-01…T-10` (10). Allocation never spills between categories. A blocked or held bay is unavailable. The public spot map does not reveal plates or drivers.
+**Exactly 100 bays, fixed by category:** Bikes `B-01…B-40` (40), cars `C-01…C-30` (30), vans `V-01…V-15` (15), trucks `T-01…T-10` (10), buses `BS-01…BS-05` (5). Allocation never spills between categories. A blocked or held bay is unavailable. The public spot map does not reveal plates or drivers.
 
 - **Online:** reserve a currently available bay; the hold lasts **30 minutes** from the moment of booking, including when the browser is closed. Present the code and plate to the gate guard; only then does the meter start. Unclaimed holds expire automatically on the next request. The customer can cancel an unclaimed reservation using its code and plate. This is a *book-now/arrive-soon* system, not scheduling for a future date or an advance-payment service.
 - **Walk-in:** gate staff assign a category-specific bay and issue an entry pass at the barrier. The meter starts immediately.
-- **Pricing:** first **15 minutes free**; then per **started hour** at the hourly rate locked when booked/entered. Each 24-hour period is capped at **10 billed hours**. Default PKR/hour: bike 50, car 100, van 150, truck 250. Admin rate changes affect new bookings only. Actual fee is calculated on the server, never trusted from the browser.
+- **Pricing:** first **15 minutes free**; then per **started hour** at the hourly rate locked when booked/entered. Each 24-hour period is capped at **10 billed hours**. Default PKR/hour: bike 50, car 100, van 150, truck 250, bus 300. Admin rate changes affect new bookings only. Actual fee is calculated on the server, never trusted from the browser.
 
 ### Payment truth / important limitation
 
@@ -82,3 +82,10 @@ python3 test/api_flow.py  # starts its own isolated HTTP server and temporary da
 ## Image / mark attribution
 
 The **Salim Habib Parking symbol** is an original SVG in `web/img/logo.svg`; the outdoor hero was generated for this project. Vehicle pictograms are original SVGs. The wallet and bank marks in `web/img/` are the actual companies' marks, not substitute letter-badges: [JazzCash (Wikimedia)](https://commons.wikimedia.org/wiki/File:JazzCash_logo_(2025).png), [easypaisa](https://crystalpng.com/product/easypaisa-logo/), [HBL](https://crystalpng.com/product/hbl-logo/), [Meezan Bank](https://iconlogovector.com/logo/meezan-bank). Those marks remain the property of their respective owners and appear only to identify offered payment routes, not to imply a commercial partnership. Only the selected **configured** bank is offered in checkout.
+
+## Default logins (local / until you set env vars)
+
+| Page | Username | Password | Change with |
+|---|---|---|---|
+| `/admin` | `admin` | `admin1122` | `ADMIN_USER`, `ADMIN_PASS` |
+| `/gate` | `guard` | `guard1122` | `GUARD_USER`, `GUARD_PASS` |

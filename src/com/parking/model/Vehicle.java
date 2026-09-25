@@ -44,6 +44,7 @@ public abstract class Vehicle {
             case CAR:        return new Car(plate, owner);
             case VAN:        return new Van(plate, owner);
             case TRUCK:      return new Truck(plate, owner);
+            case BUS:        return new Bus(plate, owner);
             default: throw new IllegalArgumentException("Unsupported vehicle type");
         }
     }

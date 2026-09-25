@@ -26,10 +26,11 @@ public class ParkingFlowTest {
         RateTable rates = new RateTable(settings);
         ParkingLotService lot = new ParkingLotService("Orbit Park", repo, settings, rates, new HourlyPricing(rates), crypto, config);
         Map<String, Object> stats = lot.getStats();
-        check((int) stats.get("totalSpots") == 90 && (int) stats.get("freeSpots") == 90, "exactly 90 bays");
+        check((int) stats.get("totalSpots") == 100 && (int) stats.get("freeSpots") == 100, "exactly 100 bays");
         Map<?, ?> zones = (Map<?, ?>) stats.get("zones");
-        check(((Map<?, ?>) zones.get("MOTORCYCLE")).get("total").equals(20) && ((Map<?, ?>) zones.get("CAR")).get("total").equals(40)
-                && ((Map<?, ?>) zones.get("VAN")).get("total").equals(20) && ((Map<?, ?>) zones.get("TRUCK")).get("total").equals(10), "four isolated zones");
+        check(((Map<?, ?>) zones.get("MOTORCYCLE")).get("total").equals(40) && ((Map<?, ?>) zones.get("CAR")).get("total").equals(30)
+                && ((Map<?, ?>) zones.get("VAN")).get("total").equals(15) && ((Map<?, ?>) zones.get("TRUCK")).get("total").equals(10)
+                && ((Map<?, ?>) zones.get("BUS")).get("total").equals(5), "five isolated zones");
 
         final ParkingLotService initial = lot;
         Ticket bike = lot.reserve(VehicleType.MOTORCYCLE, "BIKE-1", "Customer");
@@ -37,11 +38,12 @@ public class ParkingFlowTest {
         Ticket car = lot.reserve(VehicleType.CAR, "CAR-1", "Customer");
         Ticket van = lot.parkVehicle(VehicleType.VAN, "VAN-1", "Walk-in");
         Ticket truck = lot.parkVehicle(VehicleType.TRUCK, "TRK-1", "Walk-in");
+        Ticket bus = lot.parkVehicle(VehicleType.BUS, "BUS-1", "Walk-in");
         check(bike.getSpotId().startsWith("B-") && car.getSpotId().startsWith("C-")
-                && van.getSpotId().startsWith("V-") && truck.getSpotId().startsWith("T-"), "no cross-zone allocation");
+                && van.getSpotId().startsWith("V-") && truck.getSpotId().startsWith("T-") && bus.getSpotId().startsWith("BS-"), "no cross-zone allocation");
         rejected(() -> initial.parkVehicle(VehicleType.CAR, "CAR-1", "Duplicate"), "cannot double book a plate");
         rejected(() -> initial.setSpotBlocked(bike.getSpotId(), true), "cannot block a held bay");
-        check((int) lot.getStats().get("freeSpots") == 86, "holds and arrivals both reduce availability");
+        check((int) lot.getStats().get("freeSpots") == 95, "holds and arrivals both reduce availability");
         Ticket entered = lot.checkIn(bike.getId(), "BIKE-1");
         check(entered.getStatus() == Ticket.Status.PARKED && entered.getEntryTime() != null, "reservation check-in starts meter");
         check(lot.validSignature(entered, "RESERVATION", reservationSignature), "reservation signature still works after check-in");
@@ -96,7 +98,7 @@ public class ParkingFlowTest {
         check(pausedLot.validSignature(pausedPaid, "PAYMENT", pausedLot.sign(pausedPaid, "PAYMENT")), "billing cutoff is signed on digital receipt");
 
         Ticket cancelled = pausedLot.cancelReservation(car.getId(), "CAR-1", "Customer cancelled");
-        check(cancelled.getStatus() == Ticket.Status.CANCELLED && pausedLot.getStats().get("freeSpots").equals(88), "cancel returns bay to capacity");
+        check(cancelled.getStatus() == Ticket.Status.CANCELLED && pausedLot.getStats().get("freeSpots").equals(97), "cancel returns bay to capacity");
         pausedLot.setSpotBlocked("C-01", true);
         check(pausedLot.getStats().get("blockedSpots").equals(1), "maintenance block updated");
         ParkingLotService loaded = new ParkingLotService("Orbit Park", new FileTicketRepository(dir.resolve("tickets.db")),
@@ -143,7 +145,7 @@ public class ParkingFlowTest {
         RateTable fullRates = new RateTable(fullSettings);
         ParkingLotService fullLot = new ParkingLotService("Orbit Park", new FileTicketRepository(fullDir.resolve("tickets.db")),
                 fullSettings, fullRates, new HourlyPricing(fullRates), new Crypto(fullDir.resolve("secret.key")), new PaymentConfig(fullSettings));
-        for (int i = 1; i <= 19; i++) fullLot.reserve(VehicleType.MOTORCYCLE, "FILL-B-" + i, "Rider");
+        for (int i = 1; i <= 39; i++) fullLot.reserve(VehicleType.MOTORCYCLE, "FILL-B-" + i, "Rider");
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<Boolean>> futures = new ArrayList<>();
@@ -161,8 +163,8 @@ public class ParkingFlowTest {
         pool.shutdownNow();
         Map<?, ?> fullZones = (Map<?, ?>) fullLot.getStats().get("zones");
         check(admitted == 1 && ((Map<?, ?>) fullZones.get("MOTORCYCLE")).get("free").equals(0),
-                "concurrent riders cannot double-allocate the 20th bike bay");
-        check(fullLot.getStats().get("freeSpots").equals(70), "full bike zone leaves other 70 vehicle-specific bays free");
+                "concurrent riders cannot double-allocate the 40th bike bay");
+        check(fullLot.getStats().get("freeSpots").equals(60), "full bike zone leaves other 60 vehicle-specific bays free");
         rejected(() -> fullLot.reserve(VehicleType.MOTORCYCLE, "OVERFLOW-B", "Rider"), "full bike zone never overflows into car/van/truck bays");
         System.out.println("ALL ORBIT PARK FLOW TESTS PASSED");
     }

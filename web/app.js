@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const { $, el, money, fmt, zoneIcon, labels, request, toast, handleError, detailCard, renderZoneMap, picker, destination, showReceipt } = Orbit;
-  const zoneOrder = ['CAR', 'MOTORCYCLE', 'VAN', 'TRUCK'];
+  const zoneOrder = ['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK', 'BUS'];
   let methods = [], current = null, selected = null;
   const busy = (button, on) => { button.disabled = on; button.dataset.busy = on ? '1' : '0'; };
 
@@ -19,8 +19,8 @@
       card.append(top, el('h3', '', labels[type]));
       const count = el('div', 'zone-number'); count.append(el('strong', '', values.free), el('span', '', `of ${values.total} available`)); card.append(count);
       const track = el('div', 'zone-progress'); const bar = el('i'); bar.style.width = `${Math.max(0, Math.min(100, values.free / values.total * 100))}%`; track.append(bar); card.append(track);
-      const foot = el('div', 'zone-foot'); foot.append(el('span', '', `${values.reserved} held · ${values.occupied} in use`));
-      const link = el('a', '', 'Book this zone ↗'); link.href = '#booking'; link.addEventListener('click', () => { $('bType').value = type; });
+      const foot = el('div', 'zone-foot'); foot.append(el('span', '', `${values.reserved} held · ${values.occupied} parked`));
+      const link = el('a', '', 'Book →'); link.href = '#booking'; link.addEventListener('click', () => { $('bType').value = type; });
       foot.append(link); card.append(foot); $('zoneCards').append(card);
     });
   };

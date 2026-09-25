@@ -7,7 +7,7 @@ import com.parking.util.Crypto;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 
-/** Salim Habib Parking: 90 dedicated outdoor bays. Uses PostgreSQL when configured, local files otherwise. */
+/** Salim Habib Parking: 100 dedicated outdoor bays (40 bikes, 30 cars, 15 vans, 10 trucks, 5 buses). Uses PostgreSQL when configured, local files otherwise. */
 public class Main {
     public static final String APP_NAME = "Salim Habib Parking";
     private static final String DEFAULT_ADMIN_PASS = "admin1122";

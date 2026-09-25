@@ -16,6 +16,7 @@ public class ParkingSpot {
             case CAR: prefix = "C"; break;
             case VAN: prefix = "V"; break;
             case TRUCK: prefix = "T"; break;
+            case BUS: prefix = "BS"; break;
             default: throw new IllegalArgumentException("Unknown zone");
         }
         id = prefix + "-" + String.format("%02d", number);

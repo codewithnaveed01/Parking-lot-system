@@ -7,7 +7,7 @@
   <meta name="description" content="Salim Habib Parking — online parking booking.">
   <title>Salim Habib Parking</title>
   <link rel="icon" href="img/favicon.png" type="image/png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <header class="topbar"><div class="shell nav-shell">
@@ -17,7 +17,7 @@
   </div></header>
 
   <main>
-    <section class="hero" id="top"><img class="hero-photo" src="img/hero-parking.jpg" alt="Shaded parking lot with bikes, cars, vans and trucks" id="heroImg"><div class="hero-overlay"></div>
+    <section class="hero" id="top"><img class="hero-photo" src="img/hero-parking.jpg?v=3" alt="Shaded parking lot with bikes, cars, vans, trucks and buses" id="heroImg"><div class="hero-overlay"></div>
       <div class="shell hero-inner"><div class="hero-content">
         <h1>Salim Habib<br><em>Parking</em></h1>
         <div class="hero-actions"><a href="#booking" class="btn btn-red btn-lg">Book your spot</a><a href="#map" class="btn btn-outline-white btn-lg">Live spots</a></div>
@@ -25,13 +25,13 @@
     </section>
 
     <div class="shell main-content">
-      <section class="metrics" aria-label="Live parking availability"><div class="metric"><span>CAPACITY</span><strong id="sTotal">90</strong></div><div class="metric"><span>AVAILABLE</span><strong id="sFree">—</strong></div><div class="metric"><span>RESERVED</span><strong id="sReserved">—</strong></div><div class="metric"><span>ON SITE</span><strong id="sOccupied">—</strong></div></section>
+      <section class="metrics" aria-label="Live parking availability"><div class="metric"><span>CAPACITY</span><strong id="sTotal">100</strong></div><div class="metric"><span>AVAILABLE</span><strong id="sFree">—</strong></div><div class="metric"><span>RESERVED</span><strong id="sReserved">—</strong></div><div class="metric"><span>ON SITE</span><strong id="sOccupied">—</strong></div></section>
 
       <section class="section" id="zones"><div class="section-heading"><div><h2>Parking zones</h2></div></div><div class="zone-cards" id="zoneCards" aria-live="polite"></div></section>
 
       <section class="section booking-section" id="booking"><div class="section-heading"><div><h2>Book a spot</h2></div></div>
         <div class="booking-layout"><div class="panel form-panel"><div class="panel-head"><div class="panel-icon">01</div><div><h3>Reserve a bay</h3></div></div>
-          <form id="bookingForm" autocomplete="off"><label for="bType">Vehicle category</label><select id="bType" required><option value="CAR">Car</option><option value="MOTORCYCLE">Bike</option><option value="VAN">Van</option><option value="TRUCK">Truck</option></select>
+          <form id="bookingForm" autocomplete="off"><label for="bType">Vehicle category</label><select id="bType" required><option value="CAR">Car</option><option value="MOTORCYCLE">Bike</option><option value="VAN">Van</option><option value="TRUCK">Truck</option><option value="BUS">Bus</option></select>
             <div class="form-row"><div><label for="bPlate">License plate <span class="required">*</span></label><input id="bPlate" required maxlength="15" pattern="[A-Za-z0-9\- ]{2,15}" placeholder="e.g. LEA-4521" autocapitalize="characters"></div><div><label for="bOwner">Your name <span class="required">*</span></label><input id="bOwner" required maxlength="60" placeholder="Name"></div></div>
             <button class="btn btn-red btn-wide" type="submit" id="bookBtn">Reserve a spot</button>
           </form></div>
@@ -55,6 +55,6 @@
 
   <div class="modal" id="receiptModal" hidden role="dialog" aria-modal="true" aria-labelledby="receiptTitle"><div class="modal-box"><div class="modal-header"><div><span class="eyebrow">SALIM HABIB PARKING</span><h3 id="receiptTitle">Your parking pass</h3></div><button class="icon-button" id="receiptClose" type="button" aria-label="Close receipt">×</button></div><div id="receiptContent" class="receipt"></div><div class="modal-actions"><button id="receiptPng" type="button" class="btn btn-red">↓ Save image</button><button id="receiptPrint" type="button" class="btn btn-dark">Print</button><button id="receiptJson" type="button" class="btn btn-plain">↓ Ticket file</button><button id="receiptHtml" type="button" class="btn btn-plain">↓ HTML</button><button id="receiptShare" type="button" class="btn btn-plain">Share</button></div></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="common.js"></script><script src="app.js"></script>
+  <script src="common.js?v=3"></script><script src="app.js?v=3"></script>
 </body>
 </html>

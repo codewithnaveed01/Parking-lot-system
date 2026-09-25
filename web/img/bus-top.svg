@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 42 112" role="img" aria-label="Bus (top view)">
+  <ellipse cx="21" cy="57" rx="19" ry="54" fill="#000" opacity=".18"/>
+  <rect x="2.5" y="14" width="3.5" height="11" rx="1.5" fill="#1a1a1a"/><rect x="36" y="14" width="3.5" height="11" rx="1.5" fill="#1a1a1a"/>
+  <rect x="2.5" y="84" width="3.5" height="11" rx="1.5" fill="#1a1a1a"/><rect x="36" y="84" width="3.5" height="11" rx="1.5" fill="#1a1a1a"/>
+  <rect x="5" y="2" width="32" height="108" rx="5" fill="#f5b400" stroke="#b58200" stroke-width="1"/>
+  <rect x="9" y="3" width="5" height="2.4" rx="1.2" fill="#fff6c9"/><rect x="28" y="3" width="5" height="2.4" rx="1.2" fill="#fff6c9"/>
+  <path d="M7 9c4-2.5 24-2.5 28 0l-1 6H8z" fill="#1d2733"/>
+  <rect x="2" y="10" width="3.5" height="3" rx="1" fill="#333"/><rect x="36.5" y="10" width="3.5" height="3" rx="1" fill="#333"/>
+  <rect x="9" y="18" width="24" height="86" rx="2" fill="#ffd24d"/>
+  <rect x="14" y="30" width="14" height="9" rx="1.5" fill="#e0a800"/><rect x="14" y="70" width="14" height="9" rx="1.5" fill="#e0a800"/>
+  <path d="M9 48h24M9 60h24M9 90h24" stroke="#e8b400" stroke-width="1"/>
+  <rect x="5.5" y="18" width="3" height="86" fill="#1d2733" opacity=".85"/><rect x="33.5" y="18" width="3" height="86" fill="#1d2733" opacity=".85"/>
+  <rect x="9" y="107" width="5" height="2" rx="1" fill="#d3132a"/><rect x="28" y="107" width="5" height="2" rx="1" fill="#d3132a"/>
+</svg>

@@ -21,7 +21,7 @@
   const stats = async () => {
     const data = await request('/api/stats'); $('gateFree').textContent = data.freeSpots; $('gateReserved').textContent = data.reservedSpots; $('gateOccupied').textContent = data.occupiedSpots;
     const mount = $('gateZoneCounts'); mount.replaceChildren();
-    ['CAR', 'MOTORCYCLE', 'VAN', 'TRUCK'].forEach(type => { const row = el('div'); row.append(el('span', '', labels[type]), el('strong', '', data.zones[type].free + ' / ' + data.zones[type].total + ' free')); mount.append(row); });
+    ['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK', 'BUS'].forEach(type => { const row = el('div'); row.append(el('span', '', labels[type]), el('strong', '', data.zones[type].free + ' / ' + data.zones[type].total + ' free')); mount.append(row); });
   };
   const loadQueue = async () => {
     const list = await G('/api/guard/active'), body = $('gateActiveTable').querySelector('tbody'); body.replaceChildren();

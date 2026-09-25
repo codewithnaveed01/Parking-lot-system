@@ -6,7 +6,7 @@ window.Orbit = (() => {
   const money = value => 'PKR ' + Number(value || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 });
   const fmt = iso => iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   const duration = iso => { if (!iso) return '—'; const mins = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000)); return mins < 60 ? mins + 'm' : `${Math.floor(mins / 60)}h ${mins % 60}m`; };
-  const labels = { CAR: 'Cars', MOTORCYCLE: 'Bikes', VAN: 'Vans', TRUCK: 'Trucks' };
+  const labels = { CAR: 'Cars', MOTORCYCLE: 'Bikes', VAN: 'Vans', TRUCK: 'Trucks', BUS: 'Buses' };
   const zoneIcon = (type, cls = '') => { const image = el('img', cls); image.src = `img/${type === 'MOTORCYCLE' ? 'bike' : type.toLowerCase()}.svg`; image.alt = ''; return image; };
   const methodNames = { EASYPAISA: 'easypaisa', JAZZCASH: 'JazzCash', BANK: 'Bank transfer', CASH: 'Cash' };
   const methodLogo = m => m.id === 'EASYPAISA' ? 'img/easypaisa.png' : m.id === 'JAZZCASH' ? 'img/jazzcash.png' : m.bankName === 'MEEZAN' ? 'img/meezan.webp' : 'img/hbl.png';
@@ -53,7 +53,7 @@ window.Orbit = (() => {
     if (t.note && t.paymentStatus !== 'PAID') box.append(el('div', 'notice-box', t.note));
     return box;
   };
-  const topView = { CAR: 'car', MOTORCYCLE: 'bike', VAN: 'van', TRUCK: 'truck' };
+  const topView = { CAR: 'car', MOTORCYCLE: 'bike', VAN: 'van', TRUCK: 'truck', BUS: 'bus' };
   const renderZoneMap = (mount, zones, onSpotClick) => {
     mount.replaceChildren();
     zones.forEach(zone => {
