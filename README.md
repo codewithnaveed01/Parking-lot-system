@@ -89,3 +89,29 @@ The **Salim Habib Parking symbol** is an original SVG in `web/img/logo.svg`; the
 |---|---|---|---|
 | `/admin` | `admin` | `admin1122` | `ADMIN_USER`, `ADMIN_PASS` |
 | `/gate` | `guard` | `guard1122` | `GUARD_USER`, `GUARD_PASS` |
+
+## Database (PostgreSQL)
+
+Everything below is created/updated **automatically when the app starts** — no manual SQL needed on Railway.
+`db/schema.sql` contains the same schema for reference or manual use (safe to re-run).
+
+| Object | Type | Purpose |
+|---|---|---|
+| `tickets` | table | Every booking / walk-in / payment with full audit trail. |
+| `settings` | table | Admin settings (rates, blocks, merchant accounts, receipt key). |
+| `vehicle_types` | table | 5 categories with bay prefix, capacity and current hourly rate. |
+| `parking_spots` | table | All 100 bays (`B-01…B-40`, `C-01…C-30`, `V-01…V-15`, `T-01…T-10`, `BS-01…BS-05`) with maintenance `blocked` flag. Bays removed from an older layout are kept with `active = false`. |
+| `spot_status` | view | Live status of each bay (FREE / RESERVED / PARKED / BLOCKED) with the plate and ticket. |
+| `zone_summary` | view | Free / reserved / parked / blocked counts per category. |
+
+The Java enum `VehicleType` is the single source of truth for the layout; on startup it is synced into
+`vehicle_types` / `parking_spots`. Rate changes and bay blocks from the admin panel are written to both
+`settings` and these tables in one transaction. Active tickets in bays that no longer exist (e.g. an old `C-35`)
+are moved automatically to a free bay of the same category.
+
+Quick checks (Railway → Postgres → Data / Query):
+
+```sql
+SELECT * FROM zone_summary;
+SELECT * FROM spot_status WHERE status <> 'FREE' ORDER BY spot_id;
+```

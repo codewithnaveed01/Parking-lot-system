@@ -10,8 +10,6 @@ import java.util.stream.Collectors;
 
 /** Single-level Salim Habib Parking. All capacity-changing operations share this lock. */
 public class ParkingLotService {
-    private static final Map<VehicleType, Integer> CAPACITY = Map.of(
-            VehicleType.MOTORCYCLE, 40, VehicleType.CAR, 30, VehicleType.VAN, 15, VehicleType.TRUCK, 10, VehicleType.BUS, 5);
     private final String name;
     private final Map<String, ParkingSpot> spots = new LinkedHashMap<>();
     private final Map<String, Ticket> activeByPlate = new HashMap<>();
@@ -28,7 +26,7 @@ public class ParkingLotService {
         this.name = name; this.repo = repo; this.settings = settings;
         this.rates = rates; this.pricing = pricing; this.crypto = crypto; this.paymentConfig = paymentConfig;
         for (VehicleType vt : VehicleType.values()) {
-            for (int n = 1; n <= CAPACITY.get(vt); n++) {
+            for (int n = 1; n <= vt.getCapacity(); n++) {
                 ParkingSpot spot = new ParkingSpot(vt, n);
                 spots.put(spot.getId(), spot);
             }
@@ -273,7 +271,7 @@ public class ParkingLotService {
                 }
             }
             free += zFree; reserved += zReserved; occupied += zOccupied;
-            zones.put(type.name(), Map.of("total", CAPACITY.get(type), "free", zFree, "reserved", zReserved, "occupied", zOccupied, "blocked", zBlocked));
+            zones.put(type.name(), Map.of("total", type.getCapacity(), "free", zFree, "reserved", zReserved, "occupied", zOccupied, "blocked", zBlocked));
         }
         Map<String, Double> byMethod = new LinkedHashMap<>();
         for (PaymentMethod method : PaymentMethod.values()) byMethod.put(method.name(), 0.0);

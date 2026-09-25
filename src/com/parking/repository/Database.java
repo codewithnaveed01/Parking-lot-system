@@ -1,5 +1,7 @@
 package com.parking.repository;
 
+import com.parking.model.Vehicle;
+import com.parking.model.VehicleType;
 import java.net.URI;
 import java.sql.*;
 import java.util.Properties;
@@ -143,13 +145,25 @@ public class Database {
             // Older rows could hold longer payment values than the original column sizes.
             "ALTER TABLE tickets ALTER COLUMN payment_account TYPE VARCHAR(80)",
             "ALTER TABLE tickets ALTER COLUMN payment_ref TYPE VARCHAR(80)",
-            "ALTER TABLE tickets ALTER COLUMN pending_ref TYPE VARCHAR(80)"
+            "ALTER TABLE tickets ALTER COLUMN pending_ref TYPE VARCHAR(80)",
+            // Lot layout: one row per vehicle category and one row per bay.
+            "CREATE TABLE IF NOT EXISTS vehicle_types (" +
+            " code VARCHAR(16) PRIMARY KEY, label VARCHAR(40) NOT NULL, size_rank SMALLINT NOT NULL," +
+            " spot_prefix VARCHAR(4) NOT NULL UNIQUE, capacity INTEGER NOT NULL CHECK (capacity >= 0)," +
+            " hourly_rate NUMERIC(12,2) NOT NULL CHECK (hourly_rate >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS parking_spots (" +
+            " id VARCHAR(12) PRIMARY KEY, vehicle_type VARCHAR(16) NOT NULL REFERENCES vehicle_types(code)," +
+            " spot_number INTEGER NOT NULL CHECK (spot_number > 0), blocked BOOLEAN NOT NULL DEFAULT FALSE," +
+            " active BOOLEAN NOT NULL DEFAULT TRUE, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
+            " UNIQUE (vehicle_type, spot_number))",
+            "CREATE INDEX IF NOT EXISTS idx_parking_spots_type ON parking_spots(vehicle_type) WHERE active"
         };
         // Indexes are an optimisation/safety net: a legacy duplicate row must not stop the whole site from booting.
         String[] optional = {
             "CREATE INDEX IF NOT EXISTS idx_tickets_exit ON tickets(exit_time)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_orbit_active_plate ON tickets(plate) WHERE exit_time IS NULL",
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_orbit_active_spot ON tickets(spot_id) WHERE exit_time IS NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_orbit_active_spot ON tickets(spot_id) WHERE exit_time IS NULL",
+            "CREATE INDEX IF NOT EXISTS idx_tickets_vehicle_type ON tickets(vehicle_type)"
         };
         try (Connection c = open(); Statement st = c.createStatement()) {
             for (String sql : required) st.execute(sql);
@@ -157,9 +171,75 @@ public class Database {
                 try { st.execute(sql); }
                 catch (SQLException e) { System.err.println("[db] skipped index (" + e.getMessage() + ")"); }
             }
-            System.out.println("[db] connected & schema ready");
+            syncLayout(c);
+            System.out.println("[db] connected & schema ready (" + VehicleType.totalCapacity() + " bays in parking_spots)");
         } catch (SQLException e) {
             throw new IllegalStateException("Database migration failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Mirrors the Java layout (VehicleType) into vehicle_types / parking_spots, carries over
+     * admin rates and maintenance blocks saved in settings, links tickets to vehicle_types,
+     * and (re)creates the spot_status view that shows every bay with its live ticket.
+     */
+    private void syncLayout(Connection c) throws SQLException {
+        boolean auto = c.getAutoCommit();
+        c.setAutoCommit(false);
+        try {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO vehicle_types (code,label,size_rank,spot_prefix,capacity,hourly_rate) VALUES (?,?,?,?,?,?)" +
+                    " ON CONFLICT (code) DO UPDATE SET label=EXCLUDED.label, size_rank=EXCLUDED.size_rank," +
+                    " spot_prefix=EXCLUDED.spot_prefix, capacity=EXCLUDED.capacity, updated_at=now()")) {
+                for (VehicleType vt : VehicleType.values()) {
+                    ps.setString(1, vt.name()); ps.setString(2, vt.getLabel()); ps.setInt(3, vt.getSize());
+                    ps.setString(4, vt.getSpotPrefix()); ps.setInt(5, vt.getCapacity());
+                    ps.setDouble(6, Vehicle.create(vt, "RATE-1", "").getHourlyRate());
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (Statement st = c.createStatement()) { st.execute("UPDATE parking_spots SET active = FALSE, updated_at = now() WHERE active"); }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO parking_spots (id,vehicle_type,spot_number,active) VALUES (?,?,?,TRUE)" +
+                    " ON CONFLICT (id) DO UPDATE SET vehicle_type=EXCLUDED.vehicle_type, spot_number=EXCLUDED.spot_number, active=TRUE, updated_at=now()")) {
+                for (VehicleType vt : VehicleType.values())
+                    for (int n = 1; n <= vt.getCapacity(); n++) {
+                        ps.setString(1, vt.spotId(n)); ps.setString(2, vt.name()); ps.setInt(3, n); ps.addBatch();
+                    }
+                ps.executeBatch();
+            }
+            try (Statement st = c.createStatement()) {
+                // Settings stay the application's source of truth; copy them into the structured tables.
+                st.execute("UPDATE vehicle_types v SET hourly_rate = CAST(s.value AS NUMERIC(12,2)), updated_at = now() FROM settings s" +
+                        " WHERE s.key = 'rate.' || v.code AND s.value ~ '^[0-9]+(\\.[0-9]+)?$'");
+                st.execute("UPDATE parking_spots p SET blocked = (s.value = 'true'), updated_at = now() FROM settings s WHERE s.key = 'blocked.' || p.id");
+                st.execute("CREATE OR REPLACE VIEW spot_status AS" +
+                        " SELECT p.id AS spot_id, p.vehicle_type, v.label AS vehicle_label, p.spot_number, p.blocked," +
+                        " CASE WHEN t.id IS NOT NULL THEN CASE WHEN t.ticket_status = 'RESERVED' THEN 'RESERVED' ELSE 'PARKED' END" +
+                        "      WHEN p.blocked THEN 'BLOCKED' ELSE 'FREE' END AS status," +
+                        " t.id AS ticket_id, t.plate, t.owner, t.channel, t.created_at, t.entry_time, t.expires_at, v.hourly_rate" +
+                        " FROM parking_spots p JOIN vehicle_types v ON v.code = p.vehicle_type" +
+                        " LEFT JOIN tickets t ON t.spot_id = p.id AND t.exit_time IS NULL" +
+                        " WHERE p.active");
+                st.execute("CREATE OR REPLACE VIEW zone_summary AS" +
+                        " SELECT v.code AS vehicle_type, v.label, v.capacity, v.hourly_rate," +
+                        " COUNT(*) FILTER (WHERE s.status = 'FREE') AS free, COUNT(*) FILTER (WHERE s.status = 'RESERVED') AS reserved," +
+                        " COUNT(*) FILTER (WHERE s.status = 'PARKED') AS parked, COUNT(*) FILTER (WHERE s.status = 'BLOCKED') AS blocked" +
+                        " FROM vehicle_types v LEFT JOIN spot_status s ON s.vehicle_type = v.code" +
+                        " GROUP BY v.code, v.label, v.capacity, v.hourly_rate, v.size_rank ORDER BY v.size_rank");
+            }
+            c.commit();
+        } catch (SQLException e) {
+            c.rollback();
+            throw e;
+        } finally {
+            c.setAutoCommit(auto);
+        }
+        // Every ticket must belong to a known vehicle category (skipped, not fatal, if legacy data disagrees).
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT 1 FROM pg_constraint WHERE conname = 'fk_tickets_vehicle_type'")) {
+            if (!rs.next()) st.execute("ALTER TABLE tickets ADD CONSTRAINT fk_tickets_vehicle_type FOREIGN KEY (vehicle_type) REFERENCES vehicle_types(code)");
+        } catch (SQLException e) { System.err.println("[db] skipped tickets→vehicle_types foreign key (" + e.getMessage() + ")"); }
     }
 }

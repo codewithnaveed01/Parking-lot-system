@@ -10,16 +10,8 @@ public class ParkingSpot {
     public ParkingSpot(VehicleType zone, int number) {
         this.zone = zone;
         this.number = number;
-        String prefix;
-        switch (zone) {
-            case MOTORCYCLE: prefix = "B"; break;
-            case CAR: prefix = "C"; break;
-            case VAN: prefix = "V"; break;
-            case TRUCK: prefix = "T"; break;
-            case BUS: prefix = "BS"; break;
-            default: throw new IllegalArgumentException("Unknown zone");
-        }
-        id = prefix + "-" + String.format("%02d", number);
+        if (number < 1 || number > zone.getCapacity()) throw new IllegalArgumentException("Bay number out of range for " + zone.getLabel());
+        id = zone.spotId(number);
     }
 
     public String getId() { return id; }
